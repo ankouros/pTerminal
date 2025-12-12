@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pTerminal</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="stylesheet" href="vendor/xterm.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+
+  <body>
+    <div id="app">
+      <header id="navbar" role="banner">
+        <div class="nav-left">
+          <div id="nav-brand" aria-label="Application name">pTerminal</div>
+
+          <select
+            id="network-select"
+            title="Select network"
+            aria-label="Select network"
+          ></select>
+
+          <button id="btn-add-network" class="btn small" title="Add network">
+            + Network
+          </button>
+          <button id="btn-add-host" class="btn small" title="Add host">
+            + Host
+          </button>
+        </div>
+
+        <div class="nav-right">
+          <button
+            id="btn-export"
+            class="btn small"
+            title="Export configuration"
+          >
+            Export
+          </button>
+          <button
+            id="btn-import"
+            class="btn small secondary"
+            disabled
+            title="Import (coming soon)"
+          >
+            Import
+          </button>
+          <button
+            id="btn-sftp"
+            class="btn small secondary"
+            disabled
+            title="SFTP browser (coming soon)"
+          >
+            SFTP
+          </button>
+          <button
+            id="btn-about"
+            class="btn small secondary"
+            title="About pTerminal"
+          >
+            About
+          </button>
+        </div>
+      </header>
+
+      <div id="content">
+        <aside id="sidebar" role="navigation" aria-label="Hosts">
+          <div id="sidebar-title">Hosts</div>
+          <div id="hosts" role="list"></div>
+        </aside>
+
+        <main id="main" role="main">
+          <header id="topbar">
+            <div id="title" aria-live="polite">Select a host</div>
+
+            <div
+              id="status"
+              class="status-disconnected"
+              title="Connection status"
+              aria-live="polite"
+            >
+              <div class="status-dot" aria-hidden="true"></div>
+              <span class="status-text">disconnected</span>
+              <span class="status-attempts"></span>
+            </div>
+          </header>
+
+          <div
+            id="terminal-container"
+            role="region"
+            aria-label="Terminal"
+          ></div>
+        </main>
+      </div>
+    </div>
+
+    <div
+      id="trust-modal"
+      class="modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="trust-title"
+    >
+      <div class="modal-card">
+        <div id="trust-title" class="modal-title">Trust SSH Host Key?</div>
+
+        <div class="modal-body">
+          <div class="modal-row">
+            <div class="label">Host</div>
+            <div id="trust-host" class="value"></div>
+          </div>
+
+          <div class="modal-row">
+            <div class="label">Fingerprint</div>
+            <div id="trust-fingerprint" class="value mono"></div>
+          </div>
+
+          <div class="modal-warn">
+            Only trust this host key if you expected this server. If the key
+            changed unexpectedly, it could indicate an attack.
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            id="trust-cancel"
+            class="btn secondary"
+            title="Cancel connection"
+          >
+            Cancel
+          </button>
+          <button
+            id="trust-accept"
+            class="btn primary"
+            title="Trust host key and continue"
+          >
+            Trust
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+     Host / Network Editor Modal
+     ========================================================= -->
+    <div id="editor-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-title" id="editor-title">Edit</div>
+
+        <div class="modal-body">
+          <form id="editor-form">
+            <!-- Network fields -->
+            <div class="form-group hidden" data-scope="network">
+              <label>Name *</label>
+              <input id="net-name" type="text" required />
+            </div>
+
+            <!-- Host fields -->
+            <div class="form-group hidden" data-scope="host">
+              <label>Name *</label>
+              <input id="host-name" type="text" required />
+            </div>
+
+            <div class="form-group hidden" data-scope="host">
+              <label>Host / IP *</label>
+              <input
+                id="host-host"
+                type="text"
+                placeholder="192.168.1.10"
+                required
+              />
+            </div>
+
+            <div class="form-row hidden" data-scope="host">
+              <div class="form-group">
+                <label>User *</label>
+                <input id="host-user" type="text" required />
+              </div>
+
+              <div class="form-group">
+                <label>Port *</label>
+                <input
+                  id="host-port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value="22"
+                  required
+                />
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div class="modal-actions">
+          <button
+            id="editor-delete"
+            class="btn secondary hidden"
+            style="color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4)"
+          >
+            Delete
+          </button>
+
+          <div style="flex: 1"></div>
+
+          <button id="editor-cancel" class="btn secondary">Cancel</button>
+          <button id="editor-save" class="btn primary" disabled>Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="vendor/xterm.js"></script>
+    <script src="vendor/xterm-addon-fit.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,125 +1,50 @@
-# pTerminal
+# pTerminal (Go)
 
-**pTerminal** is a lightweight, cross-distribution Linux application that provides a **persistent, multi-node SSH terminal UI** with a modern graphical interface.
+A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessions** with instant switching.
 
-It is designed for operators and developers who need reliable, long-lived SSH sessions without relying on system terminal emulators, X11 embedding, or distro-specific GUI toolkits.
+## Goals & Constraints
 
----
+- Go + WebView (`github.com/webview/webview`)
+- Terminal emulator: **xterm.js** (embedded assets)
+- SSH: `golang.org/x/crypto/ssh`
+- Single self-contained binary (assets embedded via `go:embed`)
+- One persistent SSH session per node; switching nodes does not reconnect
 
-## ✨ Key Features
+See `PROJECT_REQUIREMENTS.md` and `AGENTS.md`.
 
-- Persistent SSH sessions (one per node)
-- Instant switching between nodes without reconnecting
-- Modern, responsive GUI
-- Built-in terminal emulator (xterm.js)
-- Works on X11, Wayland, SSH sessions, VMs, containers
-- Single self-contained Go binary
-- No dependency on system terminals or X11 embedding
+## Quick start
 
----
-
-## 🧠 Design Philosophy
-
-pTerminal is built around a simple but strict idea:
-
-> **Never embed native terminals or depend on the host environment.**
-
-Instead, it uses:
-- **Go** for portability and static builds
-- **WebView** for a lightweight native GUI
-- **xterm.js** for a full-featured terminal emulator
-- **Native Go SSH** for session management
-
-This results in a robust application that behaves consistently across Linux distributions and environments.
-
----
-
-## 🏗 Architecture Overview
-
-```
-┌────────────────────────────────────┐
-│            Go Application           │
-│                                    │
-│  ┌──────────── WebView ──────────┐ │
-│  │ HTML / CSS / JS                │ │
-│  │  ┌───────────────┐             │ │
-│  │  │  xterm.js     │◀───────┐    │ │
-│  │  └───────────────┘        │    │ │
-│  └──────────────▲────────────┘    │ │
-│                 │ JS ↔ Go Bridge   │ │
-│                 ▼                  │ │
-│  ┌──────────────────────────────┐ │ │
-│  │ SSH + PTY Session Manager     │ │ │
-│  │  • one session per node       │ │ │
-│  │  • persistent connections     │ │ │
-│  └──────────────────────────────┘ │ │
-└────────────────────────────────────┘
-```
-
----
-
-## 📦 Installation
-
-### Prerequisites
-
-- Go (official binary distribution recommended)
-
-### Build
+### 1) Fetch frontend vendor assets (xterm.js)
+This repo intentionally does **not** vendor xterm.js by default. Run:
 
 ```bash
-go build -o pterminal
+make assets
 ```
 
-### Run
+This downloads `xterm.js`, `xterm.css`, and the `xterm-addon-fit` bundle into `assets/vendor/`.
+
+### 2) Build & run
+```bash
+make build
+./bin/pterminal
+```
+
+### 3) Configure nodes
+By default the app reads nodes from:
+
+- `~/.config/pterminal/nodes.json` (preferred)
+- or falls back to `configs/nodes.sample.json`
+
+Copy the sample:
 
 ```bash
-./pterminal
+mkdir -p ~/.config/pterminal
+cp configs/nodes.sample.json ~/.config/pterminal/nodes.json
 ```
 
-No additional runtime dependencies are required.
+## Notes
 
----
-
-## 🔐 SSH Authentication
-
-Supported / planned authentication methods:
-
-1. Password (prototype / testing only)
-2. SSH keys
-3. SSH agent support
-
-Credentials must **never** be hard-coded in production.
-
----
-
-## 🎯 Project Status
-
-- ✅ Core architecture defined
-- ✅ Minimal working prototype
-- 🔧 Binary-safe PTY streaming (in progress)
-- 🔧 Multi-node management (in progress)
-- 🔧 Resize propagation (planned)
-
----
-
-## 🚧 Non-Goals
-
-pTerminal intentionally avoids:
-
-- X11 `-into` embedding
-- External terminal emulators
-- GTK / Qt heavy frameworks
-- Electron / Node.js
-- tmux dependency
-
----
-
-## 📄 Documentation
-
-- See `PROJECT_REQUIREMENTS.md` for full design constraints and requirements.
-
----
-
-## 📝 License
-
-TBD
+- Password auth is supported for prototypes (password is requested in UI and kept in memory only).
+- Host key verification supports:
+  - strict checking against `~/.ssh/known_hosts`
+  - or insecure (for prototyping) via config flag per node
