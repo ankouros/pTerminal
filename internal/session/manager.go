@@ -101,9 +101,7 @@ func (m *Manager) Ensure(
 		return nil, fmt.Errorf("host %d not found", hostID)
 	}
 
-	// sshclient now dials directly from model.Host (no FromHost wrapper).
 	sess, err := sshclient.DialAndStart(ctx, host, cols, rows, func() (string, error) {
-		// only used when host.Auth.Method == password
 		return pw(hostID)
 	})
 	if err != nil {
@@ -127,7 +125,6 @@ func (m *Manager) Ensure(
 }
 
 func (m *Manager) monitor(ms *ManagedSession) {
-	// Wait for CLOSE (Output is closed by sshclient when the session ends)
 	for range ms.Sess.Output {
 	}
 
@@ -159,7 +156,6 @@ func (m *Manager) reconnect(ms *ManagedSession) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 
-		// Dial using the stored host directly.
 		sess, err := sshclient.DialAndStart(ctx, ms.Host, ms.cols, ms.rows, func() (string, error) {
 			m.mu.Lock()
 			pw := m.passwordProvider
@@ -172,6 +168,20 @@ func (m *Manager) reconnect(ms *ManagedSession) {
 		cancel()
 
 		if err != nil {
+			// 🚨 CRITICAL FIX:
+			// Host key problems MUST NOT auto-reconnect.
+			var unk sshclient.ErrUnknownHostKey
+			var mismatch sshclient.ErrHostKeyMismatch
+
+			if errors.As(err, &unk) || errors.As(err, &mismatch) {
+				ms.mu.Lock()
+				ms.State = StateDisconnected
+				ms.Err = err
+				ms.Attempts = 0
+				ms.mu.Unlock()
+				return
+			}
+
 			ms.mu.Lock()
 			ms.Err = err
 			ms.mu.Unlock()
@@ -276,8 +286,4 @@ func (m *Manager) findHost(id int) (model.Host, bool) {
 		}
 	}
 	return model.Host{}, false
-}
-
-func WithTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, d)
 }

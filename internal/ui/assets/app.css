@@ -331,6 +331,22 @@ html, body {
   padding: 0 10px;
 }
 
+.form-group select {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+  padding: 0 10px;
+}
+
+.form-group select:focus {
+  outline: none;
+  border-color: rgba(90,167,255,0.6);
+}
+
+
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 120px;

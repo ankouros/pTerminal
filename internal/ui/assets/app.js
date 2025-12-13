@@ -1,9 +1,9 @@
 /* ============================================================================
- * pTerminal – App JS (production-ready)
+ * pTerminal – Production App JS
  * ============================================================================
  */
 (() => {
-  /* ---------------- RPC ---------------- */
+  /* ===================== RPC ===================== */
 
   function rpc(req) {
     return window.rpc(JSON.stringify(req)).then((res) => {
@@ -38,7 +38,7 @@
   const b64dec = (s) =>
     new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0)));
 
-  /* ---------------- State ---------------- */
+  /* ===================== State ===================== */
 
   let config = null;
   let activeNetworkId = null;
@@ -48,7 +48,62 @@
   let fitAddon = null;
   let resizeBound = false;
 
-  /* ---------------- Terminal ---------------- */
+  let pasteBuffer = null;
+
+  function ensurePasteBuffer() {
+    if (pasteBuffer) return pasteBuffer;
+
+    pasteBuffer = document.createElement("textarea");
+    pasteBuffer.style.position = "fixed";
+    pasteBuffer.style.opacity = "0";
+    pasteBuffer.style.pointerEvents = "none";
+    pasteBuffer.style.left = "-1000px";
+    pasteBuffer.style.top = "-1000px";
+
+    document.body.appendChild(pasteBuffer);
+
+    pasteBuffer.addEventListener("paste", (e) => {
+      const text = (e.clipboardData || window.clipboardData)?.getData("text");
+      if (text && activeHostId) {
+        rpc({
+          type: "input",
+          hostId: activeHostId,
+          dataB64: b64enc(text),
+        }).catch(() => {});
+      }
+    });
+
+    return pasteBuffer;
+  }
+
+  /* ===================== Terminal ===================== */
+
+  function ensurePasteBuffer() {
+    if (pasteBuffer) return pasteBuffer;
+
+    pasteBuffer = document.createElement("textarea");
+    pasteBuffer.style.position = "fixed";
+    pasteBuffer.style.opacity = "0";
+    pasteBuffer.style.pointerEvents = "none";
+    pasteBuffer.style.left = "-1000px";
+    pasteBuffer.style.top = "-1000px";
+
+    document.body.appendChild(pasteBuffer);
+
+    pasteBuffer.addEventListener("paste", (e) => {
+      const text =
+        (e.clipboardData || window.clipboardData)?.getData("text") || "";
+      if (text && activeHostId) {
+        rpc({
+          type: "input",
+          hostId: activeHostId,
+          dataB64: b64enc(text),
+        }).catch(() => {});
+      }
+    });
+
+    return pasteBuffer;
+  }
 
   function initTerminal() {
     if (term) term.dispose();
@@ -63,8 +118,17 @@
     fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
 
+    // ---- Normal typing ----
     term.onData((data) => {
       if (!activeHostId) return;
+
+      // ✅ Only locally echo printable characters
+      // Printable ASCII range + UTF-8 text
+      if (/^[\x20-\x7E]+$/.test(data)) {
+        term.write(data);
+      }
+
+      // 🔑 Always send ALL data to SSH
       rpc({
         type: "input",
         hostId: activeHostId,
@@ -75,6 +139,44 @@
     term.open(el("terminal-container"));
     fitAddon.fit();
 
+    // ---- Clipboard (WebView-safe) ----
+    const pasteTarget = ensurePasteBuffer();
+
+    term.attachCustomKeyEventHandler((e) => {
+      // Ctrl+Shift+V → Paste
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && e.key === "V") {
+        pasteTarget.value = "";
+        pasteTarget.focus();
+        document.execCommand("paste");
+        term.focus();
+        return false;
+      }
+
+      // Ctrl+Shift+C → Copy
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && e.key === "C") {
+        const sel = term.getSelection();
+        if (sel) {
+          pasteTarget.value = sel;
+          pasteTarget.select();
+          document.execCommand("copy");
+          term.focus();
+        }
+        return false;
+      }
+
+      return true;
+    });
+
+    // Right-click → Paste
+    el("terminal-container").addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      pasteTarget.value = "";
+      pasteTarget.focus();
+      document.execCommand("paste");
+      term.focus();
+    });
+
+    // ---- Resize handling ----
     if (!resizeBound) {
       resizeBound = true;
       window.addEventListener("resize", () => {
@@ -95,7 +197,7 @@
     term.write(b64dec(b64));
   };
 
-  /* ---------------- Status ---------------- */
+  /* ===================== Status ===================== */
 
   function updateStatus(state) {
     const status = el("status");
@@ -136,7 +238,7 @@
       .catch(() => {});
   }, 1200);
 
-  /* ---------------- Rendering ---------------- */
+  /* ===================== Rendering ===================== */
 
   function renderNetworks() {
     const sel = el("network-select");
@@ -172,6 +274,7 @@
         <div class="node-name">${esc(h.name)}</div>
         <div class="node-meta">
           ${esc(h.user)}@${esc(h.host)}:${esc(h.port ?? 22)}
+          · ${esc(h.auth?.method || "password")}
         </div>
       `;
 
@@ -182,41 +285,74 @@
     });
   }
 
-  /* ---------------- Connection ---------------- */
+  /* ===================== Connection ===================== */
 
   async function connectHost(host) {
-    activeHostId = host.id;
-    el("title").textContent = `${host.name} (${host.user}@${host.host})`;
-    initTerminal();
-    renderHosts();
-
-    const req = {
-      type: "select",
-      hostId: host.id,
-      cols: term.cols,
-      rows: term.rows,
-    };
-
     try {
-      await rpc(req);
-    } catch (err) {
-      if (err.error === "password_required") {
-        const pw = prompt(`Password for ${host.user}@${host.host}:`);
-        if (!pw) return;
-        await rpc({ ...req, passwordB64: b64enc(pw) });
-        return;
-      }
+      activeHostId = host.id;
+      el("title").textContent = `${host.name} (${host.user}@${host.host})`;
+      initTerminal();
+      renderHosts();
 
-      if (err.error === "unknown_host_key") {
-        showTrustDialog(host.id, err.hostPort, err.fingerprint);
-        return;
-      }
+      const req = {
+        type: "select",
+        hostId: host.id,
+        cols: term.cols,
+        rows: term.rows,
+        // 🔑 send stored password immediately if available
+        passwordB64:
+          host.auth?.method === "password" && host.auth.password
+            ? b64enc(host.auth.password)
+            : "",
+      };
 
-      alert(err.detail || err.error || "Connection failed");
+      try {
+        await rpc(req);
+        return;
+      } catch (err) {
+        // 🔐 Host key trust (new or changed)
+        if (
+          err.error === "unknown_host_key" ||
+          err.error === "host_key_mismatch"
+        ) {
+          showTrustDialog(host.id, err.hostPort, err.fingerprint);
+          return;
+        }
+
+        // 🔑 Password auth fallback ONLY if password missing
+        if (
+          err.error === "password_required" &&
+          host.auth?.method === "password"
+        ) {
+          const pw = prompt(`Password for ${host.user}@${host.host}:`);
+          if (!pw) return;
+
+          try {
+            await rpc({
+              ...req,
+              passwordB64: b64enc(pw),
+            });
+
+            // Cache entered password in memory (optional but UX-friendly)
+            host.auth.password = pw;
+            saveConfig();
+
+            return;
+          } catch {
+            alert("Authentication failed.");
+            return;
+          }
+        }
+
+        alert(err.detail || err.error || "Connection failed");
+      }
+    } catch (e) {
+      console.error("CONNECT ERROR", e);
+      alert("Unexpected connection error.");
     }
   }
 
-  /* ---------------- Trust dialog ---------------- */
+  /* ===================== Trust dialog ===================== */
 
   function showTrustDialog(hostId, hostPort, fingerprint) {
     el("trust-host").textContent = hostPort;
@@ -240,177 +376,184 @@
     };
   }
 
- /* ---------------- Editor modal ---------------- */
+  /* ===================== Editor modal ===================== */
 
-let editorMode = null;   // create | edit
-let editorType = null;   // host | network
-let editorTarget = null;
+  let editorMode = null;
+  let editorType = null;
+  let editorTarget = null;
 
-function openEditor(type, mode, target = null) {
-  editorType = type;
-  editorMode = mode;
-  editorTarget = target;
+  function openEditor(type, mode, target = null) {
+    editorType = type;
+    editorMode = mode;
+    editorTarget = target;
 
-  el("editor-title").textContent =
-    `${mode === "create" ? "Add" : "Edit"} ${type}`;
+    el("editor-title").textContent = `${
+      mode === "create" ? "Add" : "Edit"
+    } ${type}`;
 
-  // Toggle scoped fields
-  document.querySelectorAll("[data-scope]").forEach((n) => {
-    n.classList.toggle("hidden", n.dataset.scope !== type);
-  });
+    // Show only relevant fields
+    document.querySelectorAll("[data-scope]").forEach((n) => {
+      n.classList.toggle("hidden", n.dataset.scope !== type);
+    });
 
-  // Toggle delete button
-  const delBtn = el("editor-delete");
-  delBtn.classList.toggle("hidden", mode !== "edit");
+    el("editor-delete").classList.toggle("hidden", mode !== "edit");
 
-  if (type === "network") {
-    el("net-name").value = target?.name || "";
-  } else {
+    if (type === "network") {
+      el("net-name").value = target?.name || "";
+      validateEditor();
+      el("editor-modal").classList.remove("hidden");
+      return;
+    }
+
+    /* ---------- HOST ---------- */
+
+    const auth = target?.auth || { method: "password", password: "" };
+
     const hostHost = el("host-host");
-
     el("host-name").value = target?.name || "";
-
-    // Explicitly reset editability (WebView safety)
     hostHost.value = target?.host || "";
     hostHost.disabled = false;
     hostHost.readOnly = false;
 
     el("host-user").value = target?.user || "root";
     el("host-port").value = target?.port || 22;
-  }
 
-  validateEditor();
-  el("editor-modal").classList.remove("hidden");
-}
+    // Auth method
+    el("host-auth").value = auth.method || "password";
 
-function closeEditor() {
-  el("editor-modal").classList.add("hidden");
-  editorMode = editorType = editorTarget = null;
-}
-
-function validateEditor() {
-  let ok = true;
-
-  if (editorType === "network") {
-    ok = !!el("net-name").value.trim();
-  }
-
-  if (editorType === "host") {
-    ok =
-      el("host-name").value.trim() &&
-      el("host-host").value.trim() &&
-      el("host-user").value.trim() &&
-      Number(el("host-port").value) > 0;
-  }
-
-  el("editor-save").disabled = !ok;
-}
-
-// Live validation
-["net-name", "host-name", "host-host", "host-user", "host-port"]
-  .forEach((id) => el(id)?.addEventListener("input", validateEditor));
-
-/* ---------------- Save ---------------- */
-
-el("editor-save").onclick = () => {
-  if (editorType === "network") {
-    if (editorMode === "create") {
-      config.networks.push({
-        id: Date.now(),
-        name: el("net-name").value.trim(),
-        hosts: [],
-      });
-    } else {
-      editorTarget.name = el("net-name").value.trim();
-    }
-  }
-
-  if (editorType === "host") {
-    const net = config.networks.find(
-      (n) => n.id === activeNetworkId
-    );
-    if (!net) return;
-
-    const data = {
-      name: el("host-name").value.trim(),
-      host: el("host-host").value.trim(),
-      user: el("host-user").value.trim(),
-      port: Number(el("host-port").value),
-    };
-
-    if (editorMode === "create") {
-      net.hosts.push({
-        id: Date.now(),
-        ...data,
-        auth: { method: "password" },
-        hostKey: { mode: "known_hosts" },
-        sftpEnabled: false,
-      });
-    } else {
-      Object.assign(editorTarget, data);
-    }
-  }
-
-  closeEditor();
-  saveConfig();
-};
-
-/* ---------------- Delete ---------------- */
-
-el("editor-delete").onclick = () => {
-  if (!editorTarget) return;
-
-  if (editorType === "host") {
-    if (editorTarget.id === activeHostId) {
-      alert("Disconnect from the host before deleting it.");
-      return;
-    }
-
-    if (!confirm(`Delete host "${editorTarget.name}"?`)) return;
-
-    const net = config.networks.find(
-      (n) => n.id === activeNetworkId
-    );
-    if (!net) return;
-
-    net.hosts = net.hosts.filter(
-      (h) => h.id !== editorTarget.id
-    );
-  }
-
-  if (editorType === "network") {
-    if (editorTarget.hosts?.length) {
-      alert("Delete all hosts in this network first.");
-      return;
-    }
-
-    if (!confirm(`Delete network "${editorTarget.name}"?`)) return;
-
-    config.networks = config.networks.filter(
-      (n) => n.id !== editorTarget.id
+    // Password field (only for password auth)
+    el("host-password").value = auth.password || "";
+    el("host-password-row")?.classList.toggle(
+      "hidden",
+      el("host-auth").value !== "password"
     );
 
-    if (activeNetworkId === editorTarget.id) {
+    validateEditor();
+    el("editor-modal").classList.remove("hidden");
+  }
+
+  el("host-auth").addEventListener("change", () => {
+    const isPassword = el("host-auth").value === "password";
+    el("host-password-row")?.classList.toggle("hidden", !isPassword);
+    validateEditor();
+  });
+
+  function closeEditor() {
+    el("editor-modal").classList.add("hidden");
+    editorMode = editorType = editorTarget = null;
+  }
+
+  function validateEditor() {
+    let ok = true;
+
+    if (editorType === "network") {
+      ok = !!el("net-name").value.trim();
+    }
+
+    if (editorType === "host") {
+      ok =
+        el("host-name").value.trim() &&
+        el("host-host").value.trim() &&
+        el("host-user").value.trim() &&
+        Number(el("host-port").value) > 0 &&
+        el("host-auth").value;
+    }
+
+    el("editor-save").disabled = !ok;
+  }
+
+  [
+    "net-name",
+    "host-name",
+    "host-host",
+    "host-user",
+    "host-port",
+    "host-auth",
+  ].forEach((id) => el(id)?.addEventListener("input", validateEditor));
+
+  el("editor-save").onclick = () => {
+    if (editorType === "network") {
+      if (editorMode === "create") {
+        config.networks.push({
+          id: Date.now(),
+          name: el("net-name").value.trim(),
+          hosts: [],
+        });
+      } else {
+        editorTarget.name = el("net-name").value.trim();
+      }
+    }
+
+    if (editorType === "host") {
+      const net = config.networks.find((n) => n.id === activeNetworkId);
+      if (!net) return;
+
+      const data = {
+        name: el("host-name").value.trim(),
+        host: el("host-host").value.trim(),
+        user: el("host-user").value.trim(),
+        port: Number(el("host-port").value),
+        auth: {
+          method: el("host-auth").value,
+          password: el("host-password").value || "",
+        },
+      };
+
+      if (editorMode === "create") {
+        net.hosts.push({
+          id: Date.now(),
+          ...data,
+          hostKey: { mode: "known_hosts" },
+          sftpEnabled: false,
+        });
+      } else {
+        Object.assign(editorTarget, data);
+      }
+    }
+
+    closeEditor();
+    saveConfig();
+  };
+
+  el("editor-delete").onclick = () => {
+    if (!editorTarget) return;
+
+    if (editorType === "host") {
+      if (editorTarget.id === activeHostId) {
+        alert("Disconnect before deleting this host.");
+        return;
+      }
+
+      if (!confirm(`Delete host "${editorTarget.name}"?`)) return;
+
+      const net = config.networks.find((n) => n.id === activeNetworkId);
+      net.hosts = net.hosts.filter((h) => h.id !== editorTarget.id);
+    }
+
+    if (editorType === "network") {
+      if (editorTarget.hosts?.length) {
+        alert("Delete all hosts in this network first.");
+        return;
+      }
+
+      if (!confirm(`Delete network "${editorTarget.name}"?`)) return;
+
+      config.networks = config.networks.filter((n) => n.id !== editorTarget.id);
+
       activeNetworkId = null;
       activeHostId = null;
     }
-  }
 
-  closeEditor();
-  saveConfig();
-};
+    closeEditor();
+    saveConfig();
+  };
 
-/* ---------------- Cancel / Escape ---------------- */
+  el("editor-cancel").onclick = closeEditor;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeEditor();
+  });
 
-el("editor-cancel").onclick = closeEditor;
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeEditor();
-});
-
-
-
-  /* ---------------- Config ---------------- */
+  /* ===================== Config ===================== */
 
   function saveConfig() {
     rpc({ type: "config_save", config })
@@ -428,67 +571,44 @@ document.addEventListener("keydown", (e) => {
       .catch((e) => alert("Failed to load config: " + (e.detail || e.error)));
   }
 
+  /* ===================== Bind UI ===================== */
 
-/* ---------------- Bind UI ---------------- */
+  function bindUI() {
+    const sel = el("network-select");
 
-function bindUI() {
-  const networkSelect = el("network-select");
+    sel.onchange = (e) => {
+      activeNetworkId = Number(e.target.value) || null;
+      activeHostId = null;
+      renderHosts();
+      updateStatus(null);
+    };
 
-  /* ---------------- Network selection ---------------- */
+    sel.ondblclick = () => {
+      const net = config.networks.find((n) => n.id === activeNetworkId);
+      if (net) openEditor("network", "edit", net);
+    };
 
-  networkSelect.onchange = (e) => {
-    activeNetworkId = Number(e.target.value) || null;
-    activeHostId = null;
-    renderHosts();
-    updateStatus(null);
-  };
+    el("btn-add-network").onclick = () => openEditor("network", "create");
 
-  // Double-click network selector → edit network
-  networkSelect.ondblclick = () => {
-    if (!activeNetworkId) return;
+    el("btn-add-host").onclick = () => {
+      if (!activeNetworkId) {
+        alert("Select a network first.");
+        return;
+      }
+      openEditor("host", "create");
+    };
 
-    const net = config.networks.find(
-      (n) => n.id === activeNetworkId
-    );
-    if (net) openEditor("network", "edit", net);
-  };
-
-  /* ---------------- Add actions ---------------- */
-
-  el("btn-add-network").onclick = () =>
-    openEditor("network", "create");
-
-  el("btn-add-host").onclick = () => {
-    if (!activeNetworkId) {
-      alert("Please select a network first.");
-      return;
-    }
-    openEditor("host", "create");
-  };
-
-  /* ---------------- Export ---------------- */
-
-  el("btn-export").onclick = () =>
-    rpc({ type: "config_export" })
-      .then((r) =>
+    el("btn-export").onclick = () =>
+      rpc({ type: "config_export" }).then((r) =>
         alert(`Config exported to:\n${r.path}`)
-      )
-      .catch((e) =>
-        alert(e.detail || e.error || "Export failed")
       );
 
-  /* ---------------- About ---------------- */
+    el("btn-about").onclick = () =>
+      rpc({ type: "about" }).then((r) => alert(r.text));
+  }
 
-  el("btn-about").onclick = () =>
-    rpc({ type: "about" })
-      .then((r) => alert(r.text))
-      .catch(() => {});
-}
-
-/* ---------------- Init ---------------- */
-
-document.addEventListener("DOMContentLoaded", () => {
-  bindUI();
-  loadConfig();
-});
+  document.addEventListener("DOMContentLoaded", () => {
+    bindUI();
+    loadConfig();
+  });
 })();

@@ -34,6 +34,7 @@ func (e ErrUnknownHostKey) Error() string {
 type ErrHostKeyMismatch struct {
 	HostPort    string
 	Fingerprint string
+	Key         ssh.PublicKey
 }
 
 func (e ErrHostKeyMismatch) Error() string {
@@ -41,7 +42,7 @@ func (e ErrHostKeyMismatch) Error() string {
 }
 
 /*
-NodeSession (kept name for compatibility) - now backed by model.Host
+NodeSession
 */
 
 type NodeSession struct {
@@ -77,7 +78,7 @@ func DialAndStart(
 		}
 	}()
 
-	addr := fmt.Sprintf("%s:%d", host.Host, host.Port)
+	addr := net.JoinHostPort(host.Host, fmt.Sprint(host.Port))
 	fmt.Println("SSH DIAL:", addr, "user:", host.User)
 
 	dialer := net.Dialer{Timeout: 8 * time.Second}
@@ -103,7 +104,7 @@ func DialAndStart(
 	}
 
 	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
+		ssh.ECHO:          0, // 🔑 disable remote echo
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
@@ -159,7 +160,7 @@ func DialAndStart(
 }
 
 /*
-Pump output — NEVER closes Output
+Pump output
 */
 
 func (s *NodeSession) pump(ctx context.Context, r io.Reader) {
@@ -175,7 +176,6 @@ func (s *NodeSession) pump(ctx context.Context, r io.Reader) {
 		if n > 0 {
 			b := make([]byte, n)
 			copy(b, buf[:n])
-			// Non-blocking-ish: channel is buffered; session.Manager owns draining.
 			s.Output <- b
 		}
 		if err != nil {
@@ -195,10 +195,6 @@ func (s *NodeSession) Resize(cols, rows int) error {
 	}
 	return s.sess.WindowChange(rows, cols)
 }
-
-/*
-Close — closes Output EXACTLY ONCE
-*/
 
 func (s *NodeSession) Close() error {
 	s.once.Do(func() {
@@ -269,11 +265,10 @@ func authMethod(
 		return ssh.Password(pwd), nil, nil
 
 	case model.AuthKey:
-		kp := host.Auth.KeyPath
+		kp := expandHome(host.Auth.KeyPath)
 		if kp == "" {
-			kp = "~/.ssh/id_rsa"
+			kp = expandHome("~/.ssh/id_rsa")
 		}
-		kp = expandHome(kp)
 		b, err := os.ReadFile(kp)
 		if err != nil {
 			return nil, nil, err
@@ -289,15 +284,12 @@ func authMethod(
 		if sock == "" {
 			return nil, nil, errors.New("SSH_AUTH_SOCK is not set")
 		}
-
 		conn, err := net.DialTimeout("unix", sock, 2*time.Second)
 		if err != nil {
 			return nil, nil, err
 		}
 		ag := agent.NewClient(conn)
-
-		cleanup := func() { _ = conn.Close() }
-		return ssh.PublicKeysCallback(ag.Signers), cleanup, nil
+		return ssh.PublicKeysCallback(ag.Signers), func() { _ = conn.Close() }, nil
 
 	default:
 		return nil, nil, fmt.Errorf("unknown auth method: %s", host.Auth.Method)
@@ -309,47 +301,44 @@ Host key verification
 */
 
 func hostKeyCallback(host model.Host) (ssh.HostKeyCallback, error) {
-	switch host.HostKey.Mode {
+	khPath := expandHome("~/.ssh/known_hosts")
 
-	case model.HostKeyInsecure:
-		return ssh.InsecureIgnoreHostKey(), nil
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		fp := ssh.FingerprintSHA256(key)
+		hostPort := knownhosts.Normalize(hostname)
 
-	case model.HostKeyKnownHosts, "":
-		khPath := expandHome("~/.ssh/known_hosts")
-		cb, err := knownhosts.New(khPath)
+		matcher, err := knownhosts.New(khPath)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-			err := cb(hostname, remote, key)
-			if err == nil {
-				return nil
-			}
+		err = matcher(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
 
-			var kerr *knownhosts.KeyError
-			if errors.As(err, &kerr) {
-				fp := ssh.FingerprintSHA256(key)
+		var kerr *knownhosts.KeyError
+		if errors.As(err, &kerr) {
 
-				if len(kerr.Want) == 0 {
-					return ErrUnknownHostKey{
-						HostPort:    hostname,
-						Fingerprint: fp,
-						Key:         key,
-					}
-				}
-
-				return ErrHostKeyMismatch{
-					HostPort:    hostname,
+			// Unknown host
+			if len(kerr.Want) == 0 {
+				return ErrUnknownHostKey{
+					HostPort:    hostPort,
 					Fingerprint: fp,
+					Key:         key,
 				}
 			}
-			return err
-		}, nil
 
-	default:
-		return nil, fmt.Errorf("unknown hostKey mode: %s", host.HostKey.Mode)
-	}
+			// Host key mismatch
+			return ErrHostKeyMismatch{
+				HostPort:    hostPort,
+				Fingerprint: fp,
+				Key:         key,
+			}
+		}
+
+		return err
+	}, nil
 }
 
 /*
