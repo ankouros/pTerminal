@@ -16,7 +16,10 @@
   <div id="app">
     <header id="navbar" role="banner">
       <div class="nav-left">
-        <div id="nav-brand" aria-label="Application name">pTerminal</div>
+        <div id="nav-brand" aria-label="Application name">
+          <img id="nav-logo" alt="" src="__PTERMINAL_LOGO__" />
+          <span>pTerminal</span>
+        </div>
 
         <select id="network-select" title="Select network" aria-label="Select network"></select>
 
@@ -52,12 +55,30 @@
 
       <main id="main" role="main">
         <header id="topbar">
-          <div id="title" aria-live="polite">Select a host</div>
+          <div class="topbar-left">
+            <div id="title" aria-live="polite">Select a host</div>
+          </div>
 
-          <div id="status" class="status-disconnected" title="Connection status" aria-live="polite">
-            <div class="status-dot" aria-hidden="true"></div>
-            <span class="status-text">disconnected</span>
-            <span class="status-attempts"></span>
+          <div class="topbar-right">
+            <div class="term-actions" aria-label="Terminal actions">
+              <input id="term-search" class="term-search" type="text" placeholder="Search…" spellcheck="false"
+                autocomplete="off" />
+              <button id="btn-find-prev" class="btn small secondary term-btn" title="Find previous">Prev</button>
+              <button id="btn-find-next" class="btn small secondary term-btn" title="Find next">Next</button>
+              <button id="btn-copy" class="btn small secondary term-btn" title="Copy selection (Ctrl+Shift+C)">Copy</button>
+              <button id="btn-paste" class="btn small secondary term-btn" title="Paste (Ctrl+Shift+V)">Paste</button>
+              <button id="btn-clear" class="btn small secondary term-btn" title="Clear terminal">Clear</button>
+              <button id="btn-disconnect" class="btn small term-btn" style="color: #ff6b7d; border-color: rgba(255, 107, 125, 0.4)"
+                title="Disconnect (stop reconnect attempts)">
+                Disconnect
+              </button>
+            </div>
+
+            <div id="status" class="status-disconnected" title="Connection status" aria-live="polite">
+              <div class="status-dot" aria-hidden="true"></div>
+              <span class="status-text">disconnected</span>
+              <span class="status-attempts"></span>
+            </div>
           </div>
         </header>
 
@@ -178,6 +199,14 @@
 
   <script src="vendor/xterm.js"></script>
   <script src="vendor/xterm-addon-fit.js"></script>
+  <script src="vendor/xterm-addon-clipboard.js"></script>
+  <script src="vendor/xterm-addon-search.js"></script>
+  <script src="vendor/xterm-addon-web-links.js"></script>
+  <script src="vendor/xterm-addon-webgl.js"></script>
+  <script src="vendor/xterm-addon-serialize.js"></script>
+  <script src="vendor/xterm-addon-unicode11.js"></script>
+  <script src="vendor/xterm-addon-ligatures.js"></script>
+  <script src="vendor/xterm-addon-image.js"></script>
   <script src="app.js"></script>
 </body>
 

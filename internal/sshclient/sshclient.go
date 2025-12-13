@@ -56,6 +56,7 @@ type NodeSession struct {
 	stderr io.Reader
 
 	Output chan []byte
+	Done   chan struct{}
 
 	cancel context.CancelFunc
 	once   sync.Once
@@ -104,7 +105,7 @@ func DialAndStart(
 	}
 
 	modes := ssh.TerminalModes{
-		ssh.ECHO:          0, // 🔑 disable remote echo
+		ssh.ECHO:          1,
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
@@ -150,11 +151,27 @@ func DialAndStart(
 		stdout: stdout,
 		stderr: stderr,
 		Output: make(chan []byte, 128),
+		Done:   make(chan struct{}),
 		cancel: cancel,
 	}
 
-	go ns.pump(ctx2, stdout)
-	go ns.pump(ctx2, stderr)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		ns.pump(ctx2, stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		ns.pump(ctx2, stderr)
+	}()
+
+	// Close the session once both output streams are done (EOF / disconnect).
+	go func() {
+		wg.Wait()
+		_ = ns.Close()
+	}()
 
 	return ns, nil
 }
@@ -201,6 +218,7 @@ func (s *NodeSession) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
+		close(s.Done)
 		close(s.Output)
 	})
 

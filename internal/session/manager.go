@@ -30,9 +30,10 @@ type ManagedSession struct {
 	Host model.Host
 	Sess *sshclient.NodeSession
 
-	State    SessionState
-	Err      error
-	Attempts int
+	State         SessionState
+	Err           error
+	Attempts      int
+	AutoReconnect bool
 
 	cols int
 	rows int
@@ -109,11 +110,12 @@ func (m *Manager) Ensure(
 	}
 
 	ms := &ManagedSession{
-		Host:  host,
-		Sess:  sess,
-		State: StateConnected,
-		cols:  cols,
-		rows:  rows,
+		Host:          host,
+		Sess:          sess,
+		State:         StateConnected,
+		AutoReconnect: true,
+		cols:          cols,
+		rows:          rows,
 	}
 
 	m.mu.Lock()
@@ -125,17 +127,23 @@ func (m *Manager) Ensure(
 }
 
 func (m *Manager) monitor(ms *ManagedSession) {
-	for range ms.Sess.Output {
+	if ms.Sess == nil {
+		return
 	}
+	<-ms.Sess.Done
 
 	ms.mu.Lock()
 	ms.State = StateDisconnected
+	ms.Sess = nil
 	if ms.Err == nil {
 		ms.Err = errors.New("ssh connection lost")
 	}
+	auto := ms.AutoReconnect
 	ms.mu.Unlock()
 
-	go m.reconnect(ms)
+	if auto {
+		go m.reconnect(ms)
+	}
 }
 
 func backoff(attempt int) time.Duration {
@@ -147,6 +155,13 @@ func backoff(attempt int) time.Duration {
 
 func (m *Manager) reconnect(ms *ManagedSession) {
 	for attempt := 1; ; attempt++ {
+		ms.mu.Lock()
+		auto := ms.AutoReconnect
+		ms.mu.Unlock()
+		if !auto {
+			return
+		}
+
 		ms.mu.Lock()
 		ms.State = StateReconnecting
 		ms.Attempts = attempt
@@ -193,6 +208,7 @@ func (m *Manager) reconnect(ms *ManagedSession) {
 		ms.State = StateConnected
 		ms.Err = nil
 		ms.Attempts = 0
+		ms.AutoReconnect = true
 		ms.mu.Unlock()
 
 		go m.monitor(ms)
@@ -245,8 +261,8 @@ func (m *Manager) BufferOutput(hostID int, data []byte) {
 	defer m.mu.Unlock()
 
 	m.buffers[hostID] = append(m.buffers[hostID], data)
-	if len(m.buffers[hostID]) > 200 {
-		m.buffers[hostID] = m.buffers[hostID][len(m.buffers[hostID])-200:]
+	if len(m.buffers[hostID]) > 2000 {
+		m.buffers[hostID] = m.buffers[hostID][len(m.buffers[hostID])-2000:]
 	}
 }
 
@@ -271,6 +287,31 @@ func (m *Manager) Write(hostID int, b64 string) error {
 		return err
 	}
 	return ms.Sess.Write(data)
+}
+
+func (m *Manager) Disconnect(hostID int) error {
+	m.mu.Lock()
+	ms := m.sessions[hostID]
+	if ms == nil {
+		m.mu.Unlock()
+		return nil
+	}
+	delete(m.sessions, hostID)
+	m.mu.Unlock()
+
+	ms.mu.Lock()
+	ms.AutoReconnect = false
+	sess := ms.Sess
+	ms.Sess = nil
+	ms.State = StateDisconnected
+	ms.Attempts = 0
+	ms.Err = nil
+	ms.mu.Unlock()
+
+	if sess != nil {
+		return sess.Close()
+	}
+	return nil
 }
 
 func (m *Manager) findHost(id int) (model.Host, bool) {

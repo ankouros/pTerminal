@@ -43,41 +43,56 @@
   let config = null;
   let activeNetworkId = null;
   let activeHostId = null;
+  let activeState = "disconnected";
+
+  const hostTerms = new Map(); // hostId -> { pane, term, fitAddon, clipboardAddon, searchAddon, ... }
+  let activePane = null;
 
   let term = null;
   let fitAddon = null;
+  let clipboardAddon = null;
+  let searchAddon = null;
+  let webLinksAddon = null;
+  let webglAddon = null;
+  let serializeAddon = null;
+  let unicode11Addon = null;
+  let ligaturesAddon = null;
+  let imageAddon = null;
   let resizeBound = false;
+  let clipboardBound = false;
 
   let pasteBuffer = null;
-
-  function ensurePasteBuffer() {
-    if (pasteBuffer) return pasteBuffer;
-
-    pasteBuffer = document.createElement("textarea");
-    pasteBuffer.style.position = "fixed";
-    pasteBuffer.style.opacity = "0";
-    pasteBuffer.style.pointerEvents = "none";
-    pasteBuffer.style.left = "-1000px";
-    pasteBuffer.style.top = "-1000px";
-
-    document.body.appendChild(pasteBuffer);
-
-    pasteBuffer.addEventListener("paste", (e) => {
-      const text = (e.clipboardData || window.clipboardData)?.getData("text");
-      if (text && activeHostId) {
-        rpc({
-          type: "input",
-          hostId: activeHostId,
-          dataB64: b64enc(text),
-        }).catch(() => {});
-      }
-    });
-
-    return pasteBuffer;
-  }
+  let pendingInput = "";
+  let inputFlushTimer = null;
 
   /* ===================== Terminal ===================== */
 
+  function queueInput(data) {
+    if (!activeHostId || !data) return;
+    if (activeState !== "connected") return;
+    pendingInput += data;
+
+    if (inputFlushTimer) return;
+    inputFlushTimer = setTimeout(() => {
+      const hostId = activeHostId;
+      const toSend = pendingInput;
+      pendingInput = "";
+      inputFlushTimer = null;
+      if (!hostId || !toSend) return;
+
+      // High-frequency path: avoid JSON parsing and just fire-and-forget.
+      window
+        .rpc(
+          JSON.stringify({
+            type: "input",
+            hostId,
+            dataB64: b64enc(toSend),
+          })
+        )
+        .catch(() => {});
+    }, 8);
+  }
+
   function ensurePasteBuffer() {
     if (pasteBuffer) return pasteBuffer;
 
@@ -90,111 +105,235 @@
 
     document.body.appendChild(pasteBuffer);
 
-    pasteBuffer.addEventListener("paste", (e) => {
-      const text =
-        (e.clipboardData || window.clipboardData)?.getData("text") || "";
-      if (text && activeHostId) {
-        rpc({
-          type: "input",
-          hostId: activeHostId,
-          dataB64: b64enc(text),
-        }).catch(() => {});
-      }
-    });
-
     return pasteBuffer;
   }
 
-  function initTerminal() {
-    if (term) term.dispose();
+  async function writeClipboardText(text) {
+    if (!text) return;
 
-    term = new Terminal({
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // fall through
+    }
+
+    const buf = ensurePasteBuffer();
+    buf.value = text;
+    buf.select();
+    document.execCommand("copy");
+  }
+
+  async function readClipboardText() {
+    try {
+      return (await navigator.clipboard.readText()) || "";
+    } catch {
+      // fall through
+    }
+
+    const buf = ensurePasteBuffer();
+    buf.value = "";
+    buf.focus();
+    document.execCommand("paste");
+    await new Promise((r) => setTimeout(r, 0));
+    const text = buf.value || "";
+    term?.focus?.();
+    return text;
+  }
+
+  function sendInputChunk(data) {
+    if (!activeHostId || !data) return;
+    if (activeState !== "connected") return;
+    window
+      .rpc(
+        JSON.stringify({
+          type: "input",
+          hostId: activeHostId,
+          dataB64: b64enc(data),
+        })
+      )
+      .catch(() => {});
+  }
+
+  function pasteText(text) {
+    if (!text) return;
+
+    // Normalize common clipboard newlines for terminals
+    const normalized = String(text).replace(/\r\n/g, "\n");
+
+    // Chunk to avoid UI stalls on large pastes/base64 encodes.
+    const chunkSize = 16384;
+    let i = 0;
+
+    const pump = () => {
+      const end = Math.min(i + chunkSize, normalized.length);
+      sendInputChunk(normalized.slice(i, end));
+      i = end;
+      if (i < normalized.length) setTimeout(pump, 0);
+    };
+
+    pump();
+  }
+
+  async function pasteFromClipboard() {
+    const text = await readClipboardText();
+    pasteText(text);
+  }
+
+  async function copySelectionToClipboard() {
+    const sel = term?.getSelection?.() || "";
+    if (!sel) return;
+    await writeClipboardText(sel);
+    term?.focus?.();
+  }
+
+  function createTerminalForHost(hostId) {
+    const pane = document.createElement("div");
+    pane.className = "term-pane hidden";
+    pane.dataset.hostId = String(hostId);
+    el("terminal-container").appendChild(pane);
+
+    const t = new Terminal({
       cursorBlink: true,
       fontFamily: "monospace",
       fontSize: 13,
       scrollback: 5000,
+      // Required for some addons (e.g. unicode11, ligatures, image)
+      allowProposedApi: true,
     });
 
-    fitAddon = new FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
+    t.open(pane);
 
-    // ---- Normal typing ----
-    term.onData((data) => {
-      if (!activeHostId) return;
+    const entry = {
+      pane,
+      term: t,
+      fitAddon: new FitAddon.FitAddon(),
+      clipboardAddon: new ClipboardAddon.ClipboardAddon(),
+      searchAddon: new SearchAddon.SearchAddon(),
+      webLinksAddon: new WebLinksAddon.WebLinksAddon(),
+      webglAddon: new WebglAddon.WebglAddon(),
+      serializeAddon: new SerializeAddon.SerializeAddon(),
+      unicode11Addon: new Unicode11Addon.Unicode11Addon(),
+      ligaturesAddon: new LigaturesAddon.LigaturesAddon(),
+      imageAddon: new ImageAddon.ImageAddon(),
+    };
 
-      // ✅ Only locally echo printable characters
-      // Printable ASCII range + UTF-8 text
-      if (/^[\x20-\x7E]+$/.test(data)) {
-        term.write(data);
-      }
+    t.loadAddon(entry.fitAddon);
+    t.loadAddon(entry.clipboardAddon);
+    t.loadAddon(entry.searchAddon);
+    t.loadAddon(entry.webLinksAddon);
+    t.loadAddon(entry.webglAddon);
+    t.loadAddon(entry.serializeAddon);
+    t.loadAddon(entry.unicode11Addon);
+    t.loadAddon(entry.ligaturesAddon);
+    t.loadAddon(entry.imageAddon);
+    t.unicode.activeVersion = "11";
 
-      // 🔑 Always send ALL data to SSH
-      rpc({
-        type: "input",
-        hostId: activeHostId,
-        dataB64: b64enc(data),
-      }).catch(() => {});
-    });
+    t.onData(queueInput);
 
-    term.open(el("terminal-container"));
-    fitAddon.fit();
+    // ---- Clipboard ----
+    ensurePasteBuffer();
+    t.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown") return true;
 
-    // ---- Clipboard (WebView-safe) ----
-    const pasteTarget = ensurePasteBuffer();
-
-    term.attachCustomKeyEventHandler((e) => {
-      // Ctrl+Shift+V → Paste
-      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && e.key === "V") {
-        pasteTarget.value = "";
-        pasteTarget.focus();
-        document.execCommand("paste");
-        term.focus();
+      // Paste: Ctrl+Shift+V, Shift+Insert
+      if (
+        (e.ctrlKey && e.shiftKey && e.key === "V") ||
+        (e.shiftKey && e.key === "Insert")
+      ) {
+        pasteFromClipboard().catch(() => {});
         return false;
       }
 
-      // Ctrl+Shift+C → Copy
-      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && e.key === "C") {
-        const sel = term.getSelection();
-        if (sel) {
-          pasteTarget.value = sel;
-          pasteTarget.select();
-          document.execCommand("copy");
-          term.focus();
-        }
+      // Copy: Ctrl+Shift+C, Ctrl+Insert
+      if (
+        (e.ctrlKey && e.shiftKey && e.key === "C") ||
+        (e.ctrlKey && e.key === "Insert")
+      ) {
+        copySelectionToClipboard().catch(() => {});
         return false;
       }
 
       return true;
     });
 
-    // Right-click → Paste
-    el("terminal-container").addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      pasteTarget.value = "";
-      pasteTarget.focus();
-      document.execCommand("paste");
-      term.focus();
-    });
+    hostTerms.set(hostId, entry);
+    return entry;
+  }
 
-    // ---- Resize handling ----
+  function activateTerminalForHost(hostId) {
+    if (!hostId) {
+      if (activePane) activePane.classList.add("hidden");
+      activePane = null;
+      term = null;
+      fitAddon = null;
+      clipboardAddon = null;
+      searchAddon = null;
+      webLinksAddon = null;
+      webglAddon = null;
+      serializeAddon = null;
+      unicode11Addon = null;
+      ligaturesAddon = null;
+      imageAddon = null;
+      updateTerminalActions();
+      return;
+    }
+
+    let entry = hostTerms.get(hostId);
+    if (!entry) entry = createTerminalForHost(hostId);
+
+    if (activePane && activePane !== entry.pane) activePane.classList.add("hidden");
+    entry.pane.classList.remove("hidden");
+    activePane = entry.pane;
+
+    term = entry.term;
+    fitAddon = entry.fitAddon;
+    clipboardAddon = entry.clipboardAddon;
+    searchAddon = entry.searchAddon;
+    webLinksAddon = entry.webLinksAddon;
+    webglAddon = entry.webglAddon;
+    serializeAddon = entry.serializeAddon;
+    unicode11Addon = entry.unicode11Addon;
+    ligaturesAddon = entry.ligaturesAddon;
+    imageAddon = entry.imageAddon;
+
+    fitAddon.fit();
+    term.focus();
+    updateTerminalActions();
+
+    if (!clipboardBound) {
+      clipboardBound = true;
+
+      // Right-click → Paste
+      el("terminal-container").addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        pasteFromClipboard().catch(() => {});
+      });
+    }
+
     if (!resizeBound) {
       resizeBound = true;
       window.addEventListener("resize", () => {
         if (!term || !activeHostId) return;
         fitAddon.fit();
-        rpc({
-          type: "resize",
-          hostId: activeHostId,
-          cols: term.cols,
-          rows: term.rows,
-        }).catch(() => {});
+        window
+          .rpc(
+            JSON.stringify({
+              type: "resize",
+              hostId: activeHostId,
+              cols: term.cols,
+              rows: term.rows,
+            })
+          )
+          .catch(() => {});
       });
     }
   }
 
   window.dispatchPTY = (hostId, b64) => {
-    if (hostId !== activeHostId || !term) return;
-    term.write(b64dec(b64));
+    const entry = hostTerms.get(hostId);
+    if (!entry) return;
+    entry.term.write(b64dec(b64));
   };
 
   /* ===================== Status ===================== */
@@ -211,23 +350,29 @@
     );
 
     if (!state || state.state === "disconnected") {
+      activeState = "disconnected";
       status.classList.add("status-disconnected");
       text.textContent = "disconnected";
       attempts.textContent = "";
+      updateTerminalActions();
       return;
     }
 
     if (state.state === "connected") {
+      activeState = "connected";
       status.classList.add("status-connected");
       text.textContent = "connected";
       attempts.textContent = "";
+      updateTerminalActions();
       return;
     }
 
     if (state.state === "reconnecting") {
+      activeState = "reconnecting";
       status.classList.add("status-reconnecting");
       text.textContent = "reconnecting";
       attempts.textContent = state.attempts ? ` (#${state.attempts})` : "";
+      updateTerminalActions();
     }
   }
 
@@ -239,6 +384,27 @@
   }, 1200);
 
   /* ===================== Rendering ===================== */
+
+  function nextId(items) {
+    const used = new Set();
+    (items || []).forEach((it) => {
+      const id = Number(it?.id) || 0;
+      if (id > 0 && Number.isFinite(id)) used.add(id);
+    });
+
+    let candidate = 1;
+    while (used.has(candidate)) candidate++;
+    return candidate;
+  }
+
+  function nextNetworkId() {
+    return nextId(config?.networks);
+  }
+
+  function nextHostId() {
+    const allHosts = (config?.networks || []).flatMap((n) => n.hosts || []);
+    return nextId(allHosts);
+  }
 
   function renderNetworks() {
     const sel = el("network-select");
@@ -290,8 +456,9 @@
   async function connectHost(host) {
     try {
       activeHostId = host.id;
+      activeState = "reconnecting";
       el("title").textContent = `${host.name} (${host.user}@${host.host})`;
-      initTerminal();
+      activateTerminalForHost(host.id);
       renderHosts();
 
       const req = {
@@ -308,6 +475,7 @@
 
       try {
         await rpc(req);
+        updateStatus({ state: "connected" });
         return;
       } catch (err) {
         // 🔐 Host key trust (new or changed)
@@ -349,6 +517,23 @@
     } catch (e) {
       console.error("CONNECT ERROR", e);
       alert("Unexpected connection error.");
+    }
+  }
+
+  async function disconnectActiveHost() {
+    if (!activeHostId) return;
+    try {
+      await rpc({ type: "disconnect", hostId: activeHostId });
+      activeState = "disconnected";
+      updateStatus({ state: "disconnected" });
+      const entry = hostTerms.get(activeHostId);
+      if (entry) {
+        entry.term.reset();
+        entry.fitAddon.fit();
+        entry.term.write("\r\n\x1b[31m[disconnected]\x1b[0m\r\n");
+      }
+    } catch (e) {
+      alert(e.detail || e.error || "Failed to disconnect");
     }
   }
 
@@ -475,7 +660,7 @@
     if (editorType === "network") {
       if (editorMode === "create") {
         config.networks.push({
-          id: Date.now(),
+          id: nextNetworkId(),
           name: el("net-name").value.trim(),
           hosts: [],
         });
@@ -501,7 +686,7 @@
 
       if (editorMode === "create") {
         net.hosts.push({
-          id: Date.now(),
+          id: nextHostId(),
           ...data,
           hostKey: { mode: "known_hosts" },
           sftpEnabled: false,
@@ -573,12 +758,40 @@
 
   /* ===================== Bind UI ===================== */
 
+  function updateTerminalActions() {
+    const hasTerm = !!term;
+    const hasHost = !!activeHostId;
+    const isConnected = activeState === "connected";
+
+    el("btn-disconnect").disabled = !hasHost;
+    el("btn-copy").disabled = !hasTerm;
+    el("btn-clear").disabled = !hasTerm;
+    el("btn-paste").disabled = !hasTerm || !isConnected;
+    el("term-search").disabled = !hasTerm;
+    el("btn-find-prev").disabled = !hasTerm;
+    el("btn-find-next").disabled = !hasTerm;
+  }
+
+  function runSearch(next) {
+    const q = el("term-search").value || "";
+    if (!q || !searchAddon) return;
+    const ok = next
+      ? searchAddon.findNext(q, { incremental: true })
+      : searchAddon.findPrevious(q, { incremental: true });
+    if (!ok) {
+      // no-op
+    }
+  }
+
   function bindUI() {
     const sel = el("network-select");
 
     sel.onchange = (e) => {
       activeNetworkId = Number(e.target.value) || null;
       activeHostId = null;
+      activeState = "disconnected";
+      activateTerminalForHost(null);
+      el("title").textContent = "Select a host";
       renderHosts();
       updateStatus(null);
     };
@@ -605,10 +818,40 @@
 
     el("btn-about").onclick = () =>
       rpc({ type: "about" }).then((r) => alert(r.text));
+
+    el("btn-copy").onclick = () => copySelectionToClipboard().catch(() => {});
+    el("btn-paste").onclick = () => pasteFromClipboard().catch(() => {});
+    el("btn-clear").onclick = () => term?.clear?.();
+    el("btn-disconnect").onclick = () => disconnectActiveHost();
+
+    el("term-search").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        runSearch(!e.shiftKey);
+        e.preventDefault();
+      } else if (e.key === "Escape") {
+        el("term-search").value = "";
+        term?.focus?.();
+        e.preventDefault();
+      }
+    });
+
+    el("btn-find-next").onclick = () => runSearch(true);
+    el("btn-find-prev").onclick = () => runSearch(false);
+
+    document.querySelectorAll(".term-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        btn.classList.remove("pulse");
+        // force reflow so repeated clicks retrigger animation
+        void btn.offsetWidth;
+        btn.classList.add("pulse");
+        setTimeout(() => btn.classList.remove("pulse"), 180);
+      });
+    });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     bindUI();
     loadConfig();
+    updateTerminalActions();
   });
 })();

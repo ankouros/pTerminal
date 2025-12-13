@@ -129,7 +129,78 @@ func Load() (model.AppConfig, error) {
 		)
 	}
 
+	changed := normalizeIDs(&cfg)
+	if changed {
+		if err := Save(cfg); err != nil {
+			return model.AppConfig{}, err
+		}
+	}
+
 	return cfg, nil
+}
+
+func normalizeIDs(cfg *model.AppConfig) bool {
+	changed := false
+
+	// Ensure network IDs are unique and non-zero.
+	usedNet := make(map[int]struct{}, len(cfg.Networks))
+	nextNet := 1
+	for ni := range cfg.Networks {
+		id := cfg.Networks[ni].ID
+		for {
+			if id <= 0 {
+				id = nextNet
+			}
+			if _, ok := usedNet[id]; ok {
+				id++
+				continue
+			}
+			break
+		}
+		if cfg.Networks[ni].ID != id {
+			cfg.Networks[ni].ID = id
+			changed = true
+		}
+		usedNet[id] = struct{}{}
+		for {
+			nextNet++
+			if _, ok := usedNet[nextNet]; !ok {
+				break
+			}
+		}
+	}
+
+	// Ensure host IDs are unique globally across all networks and non-zero.
+	usedHost := make(map[int]struct{})
+	nextHost := 1
+	for ni := range cfg.Networks {
+		for hi := range cfg.Networks[ni].Hosts {
+			id := cfg.Networks[ni].Hosts[hi].ID
+			for {
+				if id <= 0 {
+					id = nextHost
+				}
+				if _, ok := usedHost[id]; ok {
+					id++
+					continue
+				}
+				break
+			}
+			if cfg.Networks[ni].Hosts[hi].ID != id {
+				cfg.Networks[ni].Hosts[hi].ID = id
+				changed = true
+			}
+			usedHost[id] = struct{}{}
+			for {
+				nextHost++
+				if _, ok := usedHost[nextHost]; !ok {
+					break
+				}
+			}
+		}
+	}
+
+	return changed
 }
 
 // Save writes the config atomically (tmp + fsync + rename)

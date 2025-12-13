@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ankouros/pterminal/internal/config"
@@ -29,6 +31,13 @@ type Window struct {
 
 	// per-host password cache (memory only)
 	pwCache map[int]string
+
+	activeHostID atomic.Int64
+
+	attachedMu sync.Mutex
+	attached   map[int]*sshclient.NodeSession
+
+	flushCancel context.CancelFunc
 }
 
 type pendingKey struct {
@@ -76,6 +85,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 		mgr:          mgr,
 		pendingTrust: make(map[int]pendingKey),
 		pwCache:      make(map[int]string),
+		attached:     make(map[int]*sshclient.NodeSession),
 	}
 
 	w.wv.SetTitle("pTerminal")
@@ -171,8 +181,9 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 				return fail("connect_failed", rpcResp{"detail": err.Error()})
 			}
 
-			// ✅ attach output ONLY after successful session
-			go w.attachOutput(req.HostID, sess)
+			w.activeHostID.Store(int64(req.HostID))
+			w.ensureAttached(req.HostID, sess)
+			w.flushHost(req.HostID)
 
 			return ok(nil)
 
@@ -201,6 +212,9 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			return ok(nil)
 
 		case "resize":
+			if err := w.mgr.Resize(req.HostID, req.Cols, req.Rows); err != nil {
+				return fail("resize_failed", rpcResp{"detail": err.Error()})
+			}
 			return ok(nil)
 
 		case "state":
@@ -216,6 +230,15 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 				"attempts": info.Attempts,
 			})
 
+		case "disconnect":
+			if req.HostID == 0 {
+				return fail("bad_request", nil)
+			}
+			if err := w.mgr.Disconnect(req.HostID); err != nil {
+				return fail("disconnect_failed", rpcResp{"detail": err.Error()})
+			}
+			return ok(nil)
+
 		case "about":
 			return ok(rpcResp{"text": "pTerminal – SSH Terminal Manager"})
 
@@ -226,13 +249,87 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 
 	html, _ := w.buildInlinedHTML()
 	w.wv.SetHtml(html)
+
+	w.startPTYFlushLoop()
 	return w, nil
 }
 
 func (w *Window) attachOutput(hostID int, sess *sshclient.NodeSession) {
 	for chunk := range sess.Output {
-		w.pushPTY(hostID, chunk)
+		w.mgr.BufferOutput(hostID, chunk)
 	}
+}
+
+func (w *Window) ensureAttached(hostID int, sess *sshclient.NodeSession) {
+	w.attachedMu.Lock()
+	defer w.attachedMu.Unlock()
+
+	if w.attached[hostID] == sess {
+		return
+	}
+	w.attached[hostID] = sess
+	go w.attachOutput(hostID, sess)
+}
+
+func (w *Window) startPTYFlushLoop() {
+	ctx, cancel := context.WithCancel(context.Background())
+	w.flushCancel = cancel
+
+	go func() {
+		ticker := time.NewTicker(8 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				hostID := int(w.activeHostID.Load())
+				if hostID == 0 {
+					continue
+				}
+				w.flushHost(hostID)
+			}
+		}
+	}()
+}
+
+func (w *Window) flushHost(hostID int) {
+	const maxBytesPerEval = 256 * 1024
+
+	chunks := w.mgr.DrainBuffered(hostID)
+	if len(chunks) == 0 {
+		return
+	}
+
+	buf := make([]byte, 0, 32*1024)
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		w.pushPTY(hostID, buf)
+		buf = buf[:0]
+	}
+
+	for _, c := range chunks {
+		if len(c) > maxBytesPerEval {
+			flush()
+			for start := 0; start < len(c); start += maxBytesPerEval {
+				end := start + maxBytesPerEval
+				if end > len(c) {
+					end = len(c)
+				}
+				w.pushPTY(hostID, c[start:end])
+			}
+			continue
+		}
+
+		if len(buf)+len(c) > maxBytesPerEval {
+			flush()
+		}
+		buf = append(buf, c...)
+	}
+	flush()
 }
 
 func (w *Window) pushPTY(hostID int, data []byte) {
@@ -245,21 +342,47 @@ func (w *Window) buildInlinedHTML() (string, error) {
 	index, _ := assets.ReadFile("assets/index.html")
 	appCSS, _ := assets.ReadFile("assets/app.css")
 	xtermCSS, _ := assets.ReadFile("assets/vendor/xterm.css")
+	logoSVG, _ := assets.ReadFile("assets/logo.svg")
 	appJS, _ := assets.ReadFile("assets/app.js")
 	xtermJS, _ := assets.ReadFile("assets/vendor/xterm.js")
 	fitJS, _ := assets.ReadFile("assets/vendor/xterm-addon-fit.js")
+	clipboardJS, _ := assets.ReadFile("assets/vendor/xterm-addon-clipboard.js")
+	searchJS, _ := assets.ReadFile("assets/vendor/xterm-addon-search.js")
+	webLinksJS, _ := assets.ReadFile("assets/vendor/xterm-addon-web-links.js")
+	webglJS, _ := assets.ReadFile("assets/vendor/xterm-addon-webgl.js")
+	serializeJS, _ := assets.ReadFile("assets/vendor/xterm-addon-serialize.js")
+	unicode11JS, _ := assets.ReadFile("assets/vendor/xterm-addon-unicode11.js")
+	ligaturesJS, _ := assets.ReadFile("assets/vendor/xterm-addon-ligatures.js")
+	imageJS, _ := assets.ReadFile("assets/vendor/xterm-addon-image.js")
 
 	s := string(index)
 	s = strings.ReplaceAll(s, `<link rel="stylesheet" href="vendor/xterm.css" />`, "<style>"+string(xtermCSS)+"</style>")
 	s = strings.ReplaceAll(s, `<link rel="stylesheet" href="app.css" />`, "<style>"+string(appCSS)+"</style>")
+	if len(logoSVG) > 0 {
+		logoURI := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(logoSVG)
+		s = strings.ReplaceAll(s, "__PTERMINAL_LOGO__", logoURI)
+	}
 	s = strings.ReplaceAll(s, `<script src="vendor/xterm.js"></script>`, "<script>"+string(xtermJS)+"</script>")
 	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-fit.js"></script>`, "<script>"+string(fitJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-clipboard.js"></script>`, "<script>"+string(clipboardJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-search.js"></script>`, "<script>"+string(searchJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-web-links.js"></script>`, "<script>"+string(webLinksJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-webgl.js"></script>`, "<script>"+string(webglJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-serialize.js"></script>`, "<script>"+string(serializeJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-unicode11.js"></script>`, "<script>"+string(unicode11JS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-ligatures.js"></script>`, "<script>"+string(ligaturesJS)+"</script>")
+	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-image.js"></script>`, "<script>"+string(imageJS)+"</script>")
 	s = strings.ReplaceAll(s, `<script src="app.js"></script>`, "<script>"+string(appJS)+"</script>")
 	return s, nil
 }
 
-func (w *Window) Run()   { w.wv.Run() }
-func (w *Window) Close() { w.wv.Destroy() }
+func (w *Window) Run() { w.wv.Run() }
+func (w *Window) Close() {
+	if w.flushCancel != nil {
+		w.flushCancel()
+	}
+	w.wv.Destroy()
+}
 
 func b64dec(b string) (string, error) {
 	d, err := base64.StdEncoding.DecodeString(b)

@@ -22,6 +22,30 @@ cp node_modules/@xterm/xterm/css/xterm.css \
 cp node_modules/@xterm/addon-fit/lib/addon-fit.js \
    "${ASSETS_DIR}/xterm-addon-fit.js"
 
+cp node_modules/@xterm/addon-search/lib/addon-search.js \
+   "${ASSETS_DIR}/xterm-addon-search.js"
+
+cp node_modules/@xterm/addon-web-links/lib/addon-web-links.js \
+   "${ASSETS_DIR}/xterm-addon-web-links.js"
+
+cp node_modules/@xterm/addon-webgl/lib/addon-webgl.js \
+   "${ASSETS_DIR}/xterm-addon-webgl.js"
+
+cp node_modules/@xterm/addon-serialize/lib/addon-serialize.js \
+   "${ASSETS_DIR}/xterm-addon-serialize.js"
+
+cp node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js \
+   "${ASSETS_DIR}/xterm-addon-unicode11.js"
+
+cp node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js \
+   "${ASSETS_DIR}/xterm-addon-ligatures.js"
+
+cp node_modules/@xterm/addon-image/lib/addon-image.js \
+   "${ASSETS_DIR}/xterm-addon-image.js"
+
+cp node_modules/@xterm/addon-clipboard/lib/addon-clipboard.js \
+   "${ASSETS_DIR}/xterm-addon-clipboard.js"
+
 echo "✔ Assets installed:"
 ls -lh "${ASSETS_DIR}"
 
