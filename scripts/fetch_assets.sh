@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ASSETS_DIR="${ROOT_DIR}/assets/vendor"
+ASSETS_DIR="${ROOT_DIR}/internal/ui/assets/vendor"
 PKG_DIR="${ROOT_DIR}/scripts"
 
 mkdir -p "${ASSETS_DIR}"
