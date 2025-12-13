@@ -11,24 +11,27 @@
   </defs>
 
   <!-- Outer rounded square -->
-  <rect x="64" y="64" width="384" height="384" rx="84" fill="#0F1621" filter="url(#shadow)"/>
-  <rect x="64" y="64" width="384" height="384" rx="84" stroke="rgba(255,255,255,0.08)" stroke-width="4"/>
+  <rect x="64" y="64" width="384" height="384" rx="84" fill="#121C2A" filter="url(#shadow)"/>
+  <rect x="64" y="64" width="384" height="384" rx="84" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="4"/>
 
-  <!-- Terminal frame -->
-  <rect x="124" y="154" width="264" height="204" rx="22" fill="#0B0F14" stroke="rgba(255,255,255,0.10)" stroke-width="4"/>
-  <rect x="124" y="154" width="264" height="46" rx="22" fill="#0C121B"/>
-  <circle cx="150" cy="177" r="6.5" fill="rgba(255,255,255,0.35)"/>
-  <circle cx="172" cy="177" r="6.5" fill="rgba(255,255,255,0.22)"/>
-  <circle cx="194" cy="177" r="6.5" fill="rgba(255,255,255,0.14)"/>
+  <!-- Terminal mark (scaled to occupy ~90% of inner area) -->
+  <g transform="translate(256 256) scale(1.309) translate(-256 -256)">
+    <!-- Terminal frame -->
+    <rect x="124" y="154" width="264" height="204" rx="22" fill="#0B0F14" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="4"/>
+    <rect x="124" y="154" width="264" height="46" rx="22" fill="#0C121B"/>
+    <circle cx="150" cy="177" r="6.5" fill="#FFFFFF" fill-opacity="0.45"/>
+    <circle cx="172" cy="177" r="6.5" fill="#FFFFFF" fill-opacity="0.28"/>
+    <circle cx="194" cy="177" r="6.5" fill="#FFFFFF" fill-opacity="0.18"/>
 
-  <!-- Prompt glyph: >_ -->
-  <path d="M168 250 L208 274 L168 298" stroke="url(#g)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M230 306 H296" stroke="url(#g)" stroke-width="18" stroke-linecap="round"/>
+    <!-- Prompt glyph: >_ -->
+    <path d="M168 250 L208 274 L168 298" stroke="url(#g)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M230 306 H296" stroke="url(#g)" stroke-width="18" stroke-linecap="round"/>
 
-  <!-- Nodes motif -->
-  <circle cx="352" cy="252" r="10" fill="url(#g)"/>
-  <circle cx="330" cy="290" r="8.5" fill="url(#g)" opacity="0.85"/>
-  <circle cx="374" cy="290" r="8.5" fill="url(#g)" opacity="0.85"/>
-  <path d="M352 262 L330 282" stroke="url(#g)" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
-  <path d="M352 262 L374 282" stroke="url(#g)" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
+    <!-- Nodes motif -->
+    <circle cx="352" cy="252" r="10" fill="url(#g)"/>
+    <circle cx="330" cy="290" r="8.5" fill="url(#g)" opacity="0.85"/>
+    <circle cx="374" cy="290" r="8.5" fill="url(#g)" opacity="0.85"/>
+    <path d="M352 262 L330 282" stroke="url(#g)" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
+    <path d="M352 262 L374 282" stroke="url(#g)" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
+  </g>
 </svg>

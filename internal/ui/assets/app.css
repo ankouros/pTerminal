@@ -73,6 +73,9 @@ html, body {
   height: 24px;
   display: block;
   border-radius: 7px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
 }
 
 #network-select {
@@ -374,6 +377,85 @@ html, body {
   justify-content: flex-end;
   gap: 10px;
 }
+
+/* Context menu */
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 180px;
+  background: #0f1620;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+}
+
+.context-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-main);
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.context-item:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.06);
+}
+
+.context-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.context-item.danger {
+  color: var(--text-danger);
+}
+
+/* About modal */
+.about-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+}
+
+#about-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.about-name {
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.about-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.about-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.about-grid .label { opacity: 0.7; }
+.about-grid .value { word-break: break-all; }
 
 /* ===============================
    Editor form

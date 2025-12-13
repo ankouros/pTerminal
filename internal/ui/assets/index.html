@@ -8,6 +8,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
 
+  <link rel="icon" href="__PTERMINAL_LOGO__" />
+
   <link rel="stylesheet" href="vendor/xterm.css" />
   <link rel="stylesheet" href="app.css" />
 </head>
@@ -84,6 +86,50 @@
 
         <div id="terminal-container" role="region" aria-label="Terminal"></div>
       </main>
+    </div>
+  </div>
+
+  <!-- Host context menu -->
+  <div id="host-menu" class="context-menu hidden" role="menu" aria-label="Host menu">
+    <button id="host-menu-connect" class="context-item" role="menuitem">Connect</button>
+    <button id="host-menu-edit" class="context-item" role="menuitem">Edit</button>
+    <button id="host-menu-delete" class="context-item danger" role="menuitem">Delete</button>
+  </div>
+
+  <!-- About modal -->
+  <div id="about-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div class="modal-card">
+      <div class="modal-title" id="about-title">About pTerminal</div>
+
+      <div class="modal-body">
+        <div class="about-header">
+          <img id="about-logo" alt="" src="__PTERMINAL_LOGO__" />
+          <div>
+            <div class="about-name">pTerminal</div>
+            <div class="about-sub">
+              Persistent multi-node SSH terminal manager (Go + WebView + xterm.js)
+            </div>
+          </div>
+        </div>
+
+        <div class="about-grid">
+          <div class="label">Developer</div>
+          <div class="value">
+            <span class="mono" id="about-email">ankouros30@gmail.com</span>
+            <button id="about-copy-email" class="btn small secondary term-btn" style="margin-left: 8px">Copy</button>
+          </div>
+
+          <div class="label">GitHub</div>
+          <div class="value">
+            <span class="mono" id="about-github">https://github.com/ankouros/pterminal</span>
+            <button id="about-copy-github" class="btn small secondary term-btn" style="margin-left: 8px">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="about-close" class="btn secondary">Close</button>
+      </div>
     </div>
   </div>
 

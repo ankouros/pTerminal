@@ -90,6 +90,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 
 	w.wv.SetTitle("pTerminal")
 	w.wv.SetSize(1200, 800, webview.HintNone)
+	w.wv.Dispatch(func() { w.setNativeIcon() })
 
 	w.wv.Bind("rpc", func(payload string) string {
 		var req rpcReq

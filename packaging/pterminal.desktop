@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=pTerminal
+Comment=Persistent multi-node SSH terminal manager
+Exec=pterminal
+Terminal=false
+Categories=Network;System;Utility;
+Icon=pterminal
+StartupNotify=true

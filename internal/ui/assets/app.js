@@ -385,6 +385,71 @@
 
   /* ===================== Rendering ===================== */
 
+  let hostMenuTarget = null;
+
+  function hideHostMenu() {
+    const menu = el("host-menu");
+    menu.classList.add("hidden");
+    hostMenuTarget = null;
+  }
+
+  function showHostMenuAt(x, y) {
+    const menu = el("host-menu");
+    const margin = 10;
+    const w = menu.offsetWidth || 200;
+    const h = menu.offsetHeight || 120;
+    const maxX = window.innerWidth - w - margin;
+    const maxY = window.innerHeight - h - margin;
+    menu.style.left = `${Math.max(margin, Math.min(x, maxX))}px`;
+    menu.style.top = `${Math.max(margin, Math.min(y, maxY))}px`;
+    menu.classList.remove("hidden");
+  }
+
+  async function openHostMenu(e, host) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    hostMenuTarget = host;
+
+    const connectBtn = el("host-menu-connect");
+    connectBtn.disabled = true;
+    connectBtn.classList.remove("hidden");
+    connectBtn.textContent = "Connect";
+
+    try {
+      const state = await rpc({ type: "state", hostId: host.id });
+      if (state.state === "connected") {
+        connectBtn.classList.add("hidden");
+      } else if (state.state === "reconnecting") {
+        connectBtn.disabled = true;
+        connectBtn.textContent = "Reconnecting…";
+      } else {
+        connectBtn.disabled = false;
+        connectBtn.textContent = "Connect";
+      }
+    } catch {
+      // If state fails, keep connect enabled as best effort
+      connectBtn.disabled = false;
+      connectBtn.textContent = "Connect";
+    }
+
+    showHostMenuAt(e.clientX, e.clientY);
+  }
+
+  function deleteHostFromConfig(host) {
+    if (!host) return;
+    if (host.id === activeHostId) {
+      alert("Disconnect before deleting this host.");
+      return;
+    }
+    if (!confirm(`Delete host "${host.name}"?`)) return;
+
+    const net = config.networks.find((n) => n.id === activeNetworkId);
+    if (!net) return;
+    net.hosts = net.hosts.filter((h) => h.id !== host.id);
+    saveConfig();
+  }
+
   function nextId(items) {
     const used = new Set();
     (items || []).forEach((it) => {
@@ -446,6 +511,7 @@
 
       div.onclick = () => connectHost(h);
       div.ondblclick = () => openEditor("host", "edit", h);
+      div.oncontextmenu = (e) => openHostMenu(e, h);
 
       container.appendChild(div);
     });
@@ -816,8 +882,22 @@
         alert(`Config exported to:\n${r.path}`)
       );
 
-    el("btn-about").onclick = () =>
-      rpc({ type: "about" }).then((r) => alert(r.text));
+    function showAbout() {
+      el("about-modal").classList.remove("hidden");
+    }
+
+    function hideAbout() {
+      el("about-modal").classList.add("hidden");
+    }
+
+    el("btn-about").onclick = () => showAbout();
+    el("about-close").onclick = () => hideAbout();
+
+    el("about-copy-email").onclick = () =>
+      writeClipboardText(el("about-email").textContent || "").catch(() => {});
+
+    el("about-copy-github").onclick = () =>
+      writeClipboardText(el("about-github").textContent || "").catch(() => {});
 
     el("btn-copy").onclick = () => copySelectionToClipboard().catch(() => {});
     el("btn-paste").onclick = () => pasteFromClipboard().catch(() => {});
@@ -846,6 +926,35 @@
         btn.classList.add("pulse");
         setTimeout(() => btn.classList.remove("pulse"), 180);
       });
+    });
+
+    // Host context menu
+    el("host-menu-connect").onclick = () => {
+      const h = hostMenuTarget;
+      hideHostMenu();
+      if (h) connectHost(h);
+    };
+    el("host-menu-edit").onclick = () => {
+      const h = hostMenuTarget;
+      hideHostMenu();
+      if (h) openEditor("host", "edit", h);
+    };
+    el("host-menu-delete").onclick = () => {
+      const h = hostMenuTarget;
+      hideHostMenu();
+      if (h) deleteHostFromConfig(h);
+    };
+
+    document.addEventListener("click", () => hideHostMenu());
+    document.addEventListener("contextmenu", () => hideHostMenu());
+    window.addEventListener("blur", () => hideHostMenu());
+
+    // About modal: close on background click / escape
+    el("about-modal").addEventListener("click", (e) => {
+      if (e.target === el("about-modal")) hideAbout();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") hideAbout();
     });
   }
 
