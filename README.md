@@ -12,7 +12,6 @@ A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessi
 - ✅ SSH host key verification, including UX for unknown / mismatched host keys
 - ⚙️ Planned: SSH key + agent flows in the UI, SFTP browser, richer import/export and session UX
 
-For the full design and constraints see `PROJECT_REQUIREMENTS.md` and `AGENTS.md`.
 
 ## Goals & Constraints
 
