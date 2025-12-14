@@ -468,6 +468,28 @@
     saveConfig();
   }
 
+  function duplicateHostInConfig(host) {
+    if (!host) return;
+    const net = config.networks.find((n) => n.id === activeNetworkId);
+    if (!net) return;
+
+    const clone = JSON.parse(JSON.stringify(host));
+    clone.id = nextHostId();
+
+    const baseName = `${host.name} (duplicated)`;
+    const used = new Set((net.hosts || []).map((h) => String(h?.name || "")));
+    let name = baseName;
+    let i = 2;
+    while (used.has(name)) {
+      name = `${baseName} ${i}`;
+      i++;
+    }
+    clone.name = name;
+
+    net.hosts.push(clone);
+    saveConfig();
+  }
+
   function nextId(items) {
     const used = new Set();
     (items || []).forEach((it) => {
@@ -994,6 +1016,11 @@
       const h = hostMenuTarget;
       hideHostMenu();
       if (h) openEditor("host", "edit", h);
+    };
+    el("host-menu-duplicate").onclick = () => {
+      const h = hostMenuTarget;
+      hideHostMenu();
+      if (h) duplicateHostInConfig(h);
     };
     el("host-menu-delete").onclick = () => {
       const h = hostMenuTarget;
