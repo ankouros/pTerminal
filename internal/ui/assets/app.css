@@ -491,6 +491,24 @@ html, body {
   padding: 0 10px;
 }
 
+.form-group textarea {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+  padding: 8px 10px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.help {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
 .form-group select:focus {
   outline: none;
   border-color: rgba(90,167,255,0.6);
@@ -500,8 +518,22 @@ html, body {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 120px;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.form-row.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.path-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.path-row input {
+  flex: 1;
 }
 
 .form-group input:invalid {

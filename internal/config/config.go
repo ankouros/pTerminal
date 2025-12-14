@@ -32,11 +32,12 @@ func DefaultConfig() model.AppConfig {
 				Name: "Default",
 				Hosts: []model.Host{
 					{
-						ID:   1,
-						Name: "example",
-						Host: "192.168.11.90",
-						Port: 22,
-						User: "root",
+						ID:     1,
+						Name:   "example",
+						Host:   "192.168.11.90",
+						Port:   22,
+						User:   "root",
+						Driver: model.DriverSSH,
 						Auth: model.AuthConfig{
 							Method: model.AuthPassword,
 						},

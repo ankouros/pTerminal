@@ -191,41 +191,65 @@
             <input id="host-host" type="text" placeholder="192.168.1.10" required />
           </div>
 
+	          <div class="form-group hidden" data-scope="host">
+	            <label>Connection *</label>
+	            <select id="host-driver">
+	              <option value="ssh">SSH (native)</option>
+	              <option value="ioshell">Telecom (IOshell)</option>
+	            </select>
+	          </div>
 
-              <div class="form-group">
-                <label>Port *</label>
-                <input id="host-port" type="number" min="1" max="65535" value="22" required />
-              </div>
-              
-          <div class="form-row hidden" data-scope="host">
+	          <div class="form-group hidden" data-scope="host">
+	            <label>Port *</label>
+	            <input id="host-port" type="number" min="1" max="65535" value="22" required />
+	          </div>
+
+          <div class="form-row two hidden" data-scope="host">
             <div class="form-group">
               <label>User *</label>
               <input id="host-user" type="text" required />
             </div>
 
-              <div class="form-group">
-                <label>Password</label>
-                <input id="host-password" type="password" placeholder="Optional (stored locally)"
-                  autocomplete="new-password" />
-              </div>
-
-
-
-
-
-
-
-              <div class="form-group" data-scope="host">
-                <label>Authentication *</label>
-                <select id="host-auth">
-                  <option value="password">Password</option>
-                  <option value="key">SSH Key (coming soon)</option>
-                  <option value="agent">SSH Agent (coming soon)</option>
-                </select>
-              </div>
-
-
+            <div class="form-group">
+              <label>Password</label>
+              <input id="host-password" type="password" placeholder="Optional (stored locally)"
+                autocomplete="new-password" />
             </div>
+          </div>
+
+          <div class="form-group hidden" data-scope="host" data-driver="ssh">
+            <label>Authentication *</label>
+            <select id="host-auth">
+              <option value="password">Password</option>
+              <option value="key">SSH Key (coming soon)</option>
+              <option value="agent">SSH Agent (coming soon)</option>
+            </select>
+          </div>
+
+          <div class="form-group hidden" data-scope="host" data-driver="ioshell">
+            <label>Protocol (-t) *</label>
+            <select id="ioshell-protocol">
+              <option value="ssh">ssh</option>
+              <option value="telnet">telnet</option>
+              <option value="socket">socket</option>
+              <option value="sea">sea</option>
+              <option value="cmd">cmd</option>
+            </select>
+          </div>
+
+          <div class="form-group hidden" data-scope="host" data-driver="ioshell">
+            <label>Command to run</label>
+            <input id="ioshell-command" type="text" placeholder="Optional: first command after connect" />
+          </div>
+
+          <div class="form-group hidden" data-scope="host" data-driver="ioshell">
+            <label>IOshell Path *</label>
+            <div class="path-row">
+              <input id="ioshell-path" type="text" placeholder="/home/aggelos/IOshell/ioshell_local" />
+              <button id="ioshell-browse" type="button" class="btn small secondary">Browse</button>
+            </div>
+            <input id="ioshell-path-picker" type="file" class="hidden" />
+          </div>
         </form>
       </div>
 

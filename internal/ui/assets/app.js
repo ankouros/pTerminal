@@ -67,6 +67,16 @@
 
   /* ===================== Terminal ===================== */
 
+  function safeLoadAddon(t, addon, name) {
+    try {
+      t.loadAddon(addon);
+      return true;
+    } catch (e) {
+      console.warn(`Addon failed to load: ${name}`, e);
+      return false;
+    }
+  }
+
   function queueInput(data) {
     if (!activeHostId || !data) return;
     if (activeState !== "connected") return;
@@ -189,7 +199,8 @@
 
   function createTerminalForHost(hostId) {
     const pane = document.createElement("div");
-    pane.className = "term-pane hidden";
+    // Create visible; we'll hide other panes in activateTerminalForHost.
+    pane.className = "term-pane";
     pane.dataset.hostId = String(hostId);
     el("terminal-container").appendChild(pane);
 
@@ -218,16 +229,22 @@
       imageAddon: new ImageAddon.ImageAddon(),
     };
 
-    t.loadAddon(entry.fitAddon);
-    t.loadAddon(entry.clipboardAddon);
-    t.loadAddon(entry.searchAddon);
-    t.loadAddon(entry.webLinksAddon);
-    t.loadAddon(entry.webglAddon);
-    t.loadAddon(entry.serializeAddon);
-    t.loadAddon(entry.unicode11Addon);
-    t.loadAddon(entry.ligaturesAddon);
-    t.loadAddon(entry.imageAddon);
-    t.unicode.activeVersion = "11";
+    // Load core addons first; optional ones are best-effort.
+    safeLoadAddon(t, entry.fitAddon, "fit");
+    safeLoadAddon(t, entry.clipboardAddon, "clipboard");
+    safeLoadAddon(t, entry.searchAddon, "search");
+    safeLoadAddon(t, entry.webLinksAddon, "web-links");
+    safeLoadAddon(t, entry.serializeAddon, "serialize");
+    safeLoadAddon(t, entry.unicode11Addon, "unicode11");
+    safeLoadAddon(t, entry.webglAddon, "webgl");
+    safeLoadAddon(t, entry.ligaturesAddon, "ligatures");
+    safeLoadAddon(t, entry.imageAddon, "image");
+
+    try {
+      t.unicode.activeVersion = "11";
+    } catch {
+      // ignore
+    }
 
     t.onData(queueInput);
 
@@ -297,7 +314,8 @@
     ligaturesAddon = entry.ligaturesAddon;
     imageAddon = entry.imageAddon;
 
-    fitAddon.fit();
+    // Defer a tick so layout is settled (avoids "not opened" / 0-size issues in some WebViews).
+    requestAnimationFrame(() => fitAddon?.fit?.());
     term.focus();
     updateTerminalActions();
 
@@ -505,6 +523,7 @@
         <div class="node-name">${esc(h.name)}</div>
         <div class="node-meta">
           ${esc(h.user)}@${esc(h.host)}:${esc(h.port ?? 22)}
+          · ${esc(h.driver || "ssh")}
           · ${esc(h.auth?.method || "password")}
         </div>
       `;
@@ -527,6 +546,7 @@
       activateTerminalForHost(host.id);
       renderHosts();
 
+      const driver = host.driver || "ssh";
       const req = {
         type: "select",
         hostId: host.id,
@@ -534,7 +554,9 @@
         rows: term.rows,
         // 🔑 send stored password immediately if available
         passwordB64:
-          host.auth?.method === "password" && host.auth.password
+          driver === "ssh" &&
+          host.auth?.method === "password" &&
+          host.auth.password
             ? b64enc(host.auth.password)
             : "",
       };
@@ -556,6 +578,7 @@
         // 🔑 Password auth fallback ONLY if password missing
         if (
           err.error === "password_required" &&
+          driver === "ssh" &&
           host.auth?.method === "password"
         ) {
           const pw = prompt(`Password for ${host.user}@${host.host}:`);
@@ -659,6 +682,7 @@
     /* ---------- HOST ---------- */
 
     const auth = target?.auth || { method: "password", password: "" };
+    const driver = target?.driver || "ssh";
 
     const hostHost = el("host-host");
     el("host-name").value = target?.name || "";
@@ -669,25 +693,39 @@
     el("host-user").value = target?.user || "root";
     el("host-port").value = target?.port || 22;
 
+    // Connection driver
+    el("host-driver").value = driver;
+
     // Auth method
     el("host-auth").value = auth.method || "password";
 
-    // Password field (only for password auth)
+    // Password field (ssh + ioshell)
     el("host-password").value = auth.password || "";
-    el("host-password-row")?.classList.toggle(
-      "hidden",
-      el("host-auth").value !== "password"
-    );
+
+    // IOshell fields
+    el("ioshell-path").value = target?.ioshell?.path || "";
+    el("ioshell-protocol").value = target?.ioshell?.protocol || "ssh";
+    el("ioshell-command").value = target?.ioshell?.command || "";
+
+    applyHostDriverVisibility();
 
     validateEditor();
     el("editor-modal").classList.remove("hidden");
   }
 
   el("host-auth").addEventListener("change", () => {
-    const isPassword = el("host-auth").value === "password";
-    el("host-password-row")?.classList.toggle("hidden", !isPassword);
     validateEditor();
   });
+
+  function applyHostDriverVisibility() {
+    const driver = el("host-driver")?.value || "ssh";
+    document.querySelectorAll("#editor-form [data-driver]").forEach((n) => {
+      n.classList.toggle("hidden", n.dataset.driver !== driver);
+    });
+    validateEditor();
+  }
+
+  el("host-driver").addEventListener("change", applyHostDriverVisibility);
 
   function closeEditor() {
     el("editor-modal").classList.add("hidden");
@@ -702,12 +740,15 @@
     }
 
     if (editorType === "host") {
+      const driver = el("host-driver").value || "ssh";
       ok =
         el("host-name").value.trim() &&
         el("host-host").value.trim() &&
         el("host-user").value.trim() &&
         Number(el("host-port").value) > 0 &&
-        el("host-auth").value;
+        driver &&
+        (driver !== "ioshell" ||
+          (el("ioshell-path").value.trim() && el("ioshell-protocol").value));
     }
 
     el("editor-save").disabled = !ok;
@@ -719,7 +760,11 @@
     "host-host",
     "host-user",
     "host-port",
+    "host-driver",
     "host-auth",
+    "ioshell-path",
+    "ioshell-protocol",
+    "ioshell-command",
   ].forEach((id) => el(id)?.addEventListener("input", validateEditor));
 
   el("editor-save").onclick = () => {
@@ -739,15 +784,26 @@
       const net = config.networks.find((n) => n.id === activeNetworkId);
       if (!net) return;
 
+      const driver = el("host-driver").value || "ssh";
+
       const data = {
         name: el("host-name").value.trim(),
         host: el("host-host").value.trim(),
         user: el("host-user").value.trim(),
         port: Number(el("host-port").value),
+        driver,
         auth: {
           method: el("host-auth").value,
           password: el("host-password").value || "",
         },
+        ioshell:
+          driver === "ioshell"
+            ? {
+                path: el("ioshell-path").value.trim(),
+                protocol: el("ioshell-protocol").value || "ssh",
+                command: el("ioshell-command").value || "",
+              }
+            : undefined,
       };
 
       if (editorMode === "create") {
@@ -948,6 +1004,30 @@
     document.addEventListener("click", () => hideHostMenu());
     document.addEventListener("contextmenu", () => hideHostMenu());
     window.addEventListener("blur", () => hideHostMenu());
+
+    // IOshell path picker (prefer native dialog so we get a real absolute path)
+    el("ioshell-browse").onclick = async () => {
+      try {
+        const r = await rpc({ type: "ioshell_pick" });
+        if (r.path) {
+          el("ioshell-path").value = r.path;
+          validateEditor();
+          return;
+        }
+      } catch {
+        // fall back to file input
+      }
+
+      el("ioshell-path-picker").click();
+    };
+
+    // Fallback: in some WebViews File objects expose .path
+    el("ioshell-path-picker").addEventListener("change", () => {
+      const f = el("ioshell-path-picker").files?.[0];
+      const p = f?.path || "";
+      if (p) el("ioshell-path").value = p;
+      validateEditor();
+    });
 
     // About modal: close on background click / escape
     el("about-modal").addEventListener("click", (e) => {

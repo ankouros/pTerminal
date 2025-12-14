@@ -55,8 +55,8 @@ type NodeSession struct {
 	stdout io.Reader
 	stderr io.Reader
 
-	Output chan []byte
-	Done   chan struct{}
+	output chan []byte
+	done   chan struct{}
 
 	cancel context.CancelFunc
 	once   sync.Once
@@ -150,8 +150,8 @@ func DialAndStart(
 		stdin:  stdin,
 		stdout: stdout,
 		stderr: stderr,
-		Output: make(chan []byte, 128),
-		Done:   make(chan struct{}),
+		output: make(chan []byte, 128),
+		done:   make(chan struct{}),
 		cancel: cancel,
 	}
 
@@ -193,13 +193,19 @@ func (s *NodeSession) pump(ctx context.Context, r io.Reader) {
 		if n > 0 {
 			b := make([]byte, n)
 			copy(b, buf[:n])
-			s.Output <- b
+			select {
+			case s.output <- b:
+			default:
+			}
 		}
 		if err != nil {
 			return
 		}
 	}
 }
+
+func (s *NodeSession) Output() <-chan []byte { return s.output }
+func (s *NodeSession) Done() <-chan struct{} { return s.done }
 
 func (s *NodeSession) Write(p []byte) error {
 	_, err := s.stdin.Write(p)
@@ -218,8 +224,8 @@ func (s *NodeSession) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		close(s.Done)
-		close(s.Output)
+		close(s.done)
+		close(s.output)
 	})
 
 	if s.sess != nil {

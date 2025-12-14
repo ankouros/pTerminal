@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ankouros/pterminal/internal/cmdclient"
 	"github.com/ankouros/pterminal/internal/model"
 	"github.com/ankouros/pterminal/internal/sshclient"
+	"github.com/ankouros/pterminal/internal/terminal"
 )
 
 type SessionState int
@@ -28,7 +30,7 @@ type SessionInfo struct {
 
 type ManagedSession struct {
 	Host model.Host
-	Sess *sshclient.NodeSession
+	Sess terminal.Session
 
 	State         SessionState
 	Err           error
@@ -77,7 +79,7 @@ func (m *Manager) Ensure(
 	hostID int,
 	cols, rows int,
 	pw func(hostID int) (string, error),
-) (*sshclient.NodeSession, error) {
+) (terminal.Session, error) {
 
 	m.mu.Lock()
 	m.passwordProvider = pw
@@ -86,25 +88,36 @@ func (m *Manager) Ensure(
 		ms.mu.Lock()
 		ms.cols, ms.rows = cols, rows
 		sess := ms.Sess
+		state := ms.State
+		auto := ms.AutoReconnect
 		ms.mu.Unlock()
-		m.mu.Unlock()
 
+		// If a session exists and is live, reuse it.
 		if sess != nil {
+			m.mu.Unlock()
 			_ = sess.Resize(cols, rows)
 			return sess, nil
 		}
-		return nil, errors.New("session reconnecting")
+
+		// If the session is disconnected and auto-reconnect is disabled (e.g. IOshell),
+		// allow a fresh dial instead of returning "reconnecting".
+		if state == StateDisconnected && !auto {
+			delete(m.sessions, hostID)
+			m.mu.Unlock()
+		} else {
+			m.mu.Unlock()
+			return nil, errors.New("session reconnecting")
+		}
+	} else {
+		m.mu.Unlock()
 	}
-	m.mu.Unlock()
 
 	host, ok := m.findHost(hostID)
 	if !ok {
 		return nil, fmt.Errorf("host %d not found", hostID)
 	}
 
-	sess, err := sshclient.DialAndStart(ctx, host, cols, rows, func() (string, error) {
-		return pw(hostID)
-	})
+	sess, err := m.dial(ctx, host, cols, rows, pw)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +126,7 @@ func (m *Manager) Ensure(
 		Host:          host,
 		Sess:          sess,
 		State:         StateConnected,
-		AutoReconnect: true,
+		AutoReconnect: host.Driver == "" || host.Driver == model.DriverSSH,
 		cols:          cols,
 		rows:          rows,
 	}
@@ -130,13 +143,13 @@ func (m *Manager) monitor(ms *ManagedSession) {
 	if ms.Sess == nil {
 		return
 	}
-	<-ms.Sess.Done
+	<-ms.Sess.Done()
 
 	ms.mu.Lock()
 	ms.State = StateDisconnected
 	ms.Sess = nil
 	if ms.Err == nil {
-		ms.Err = errors.New("ssh connection lost")
+		ms.Err = errors.New("connection lost")
 	}
 	auto := ms.AutoReconnect
 	ms.mu.Unlock()
@@ -154,6 +167,11 @@ func backoff(attempt int) time.Duration {
 }
 
 func (m *Manager) reconnect(ms *ManagedSession) {
+	// Only SSH sessions are auto-reconnected. IOshell runs an interactive local process.
+	if ms.Host.Driver != "" && ms.Host.Driver != model.DriverSSH {
+		return
+	}
+
 	for attempt := 1; ; attempt++ {
 		ms.mu.Lock()
 		auto := ms.AutoReconnect
@@ -171,14 +189,14 @@ func (m *Manager) reconnect(ms *ManagedSession) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 
-		sess, err := sshclient.DialAndStart(ctx, ms.Host, ms.cols, ms.rows, func() (string, error) {
+		sess, err := m.dial(ctx, ms.Host, ms.cols, ms.rows, func(hostID int) (string, error) {
 			m.mu.Lock()
 			pw := m.passwordProvider
 			m.mu.Unlock()
 			if pw == nil {
 				return "", errors.New("password provider not set")
 			}
-			return pw(ms.Host.ID)
+			return pw(hostID)
 		})
 		cancel()
 
@@ -287,6 +305,34 @@ func (m *Manager) Write(hostID int, b64 string) error {
 		return err
 	}
 	return ms.Sess.Write(data)
+}
+
+func (m *Manager) dial(
+	ctx context.Context,
+	host model.Host,
+	cols, rows int,
+	pw func(hostID int) (string, error),
+) (terminal.Session, error) {
+	driver := host.Driver
+	if driver == "" {
+		driver = model.DriverSSH
+	}
+
+	switch driver {
+	case model.DriverSSH:
+		return sshclient.DialAndStart(ctx, host, cols, rows, func() (string, error) {
+			if pw == nil {
+				return "", errors.New("password provider not set")
+			}
+			return pw(host.ID)
+		})
+
+	case model.DriverIOShell:
+		return cmdclient.StartIOShell(ctx, host, cols, rows)
+
+	default:
+		return nil, fmt.Errorf("unknown connection driver: %s", driver)
+	}
 }
 
 func (m *Manager) Disconnect(hostID int) error {

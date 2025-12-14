@@ -15,6 +15,7 @@ import (
 	"github.com/ankouros/pterminal/internal/config"
 	"github.com/ankouros/pterminal/internal/session"
 	"github.com/ankouros/pterminal/internal/sshclient"
+	"github.com/ankouros/pterminal/internal/terminal"
 	webview "github.com/webview/webview_go"
 	"golang.org/x/crypto/ssh"
 )
@@ -35,7 +36,7 @@ type Window struct {
 	activeHostID atomic.Int64
 
 	attachedMu sync.Mutex
-	attached   map[int]*sshclient.NodeSession
+	attached   map[int]terminal.Session
 
 	flushCancel context.CancelFunc
 }
@@ -85,7 +86,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 		mgr:          mgr,
 		pendingTrust: make(map[int]pendingKey),
 		pwCache:      make(map[int]string),
-		attached:     make(map[int]*sshclient.NodeSession),
+		attached:     make(map[int]terminal.Session),
 	}
 
 	w.wv.SetTitle("pTerminal")
@@ -240,6 +241,11 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			}
 			return ok(nil)
 
+		case "ioshell_pick":
+			// Bind handlers are invoked on the UI thread in this build; dispatching
+			// back to the UI thread and waiting would deadlock.
+			return ok(rpcResp{"path": w.pickIOShellExecutablePath()})
+
 		case "about":
 			return ok(rpcResp{"text": "pTerminal – SSH Terminal Manager"})
 
@@ -255,13 +261,13 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 	return w, nil
 }
 
-func (w *Window) attachOutput(hostID int, sess *sshclient.NodeSession) {
-	for chunk := range sess.Output {
+func (w *Window) attachOutput(hostID int, sess terminal.Session) {
+	for chunk := range sess.Output() {
 		w.mgr.BufferOutput(hostID, chunk)
 	}
 }
 
-func (w *Window) ensureAttached(hostID int, sess *sshclient.NodeSession) {
+func (w *Window) ensureAttached(hostID int, sess terminal.Session) {
 	w.attachedMu.Lock()
 	defer w.attachedMu.Unlock()
 
