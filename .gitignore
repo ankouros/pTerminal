@@ -1,3 +1,7 @@
 PROJECT_REQUIREMENTS.md
 project_requirements.md
 AGENTS.md
+bin/
+release/
+scripts/node_modules/
+scripts/package-lock.json

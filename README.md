@@ -132,6 +132,7 @@ The UI exposes a confirmation dialog for unknown / changed host keys and can per
 - `make assets` – fetch/update xterm.js assets into `internal/ui/assets/vendor/`
 - `make build` – build the `pterminal` binary into `bin/`
 - `make run` – build and run the app
+- `make release` – build an optimized binary bundle into `release/` (includes `.desktop` + icon + helper scripts)
 - `make fmt` – format Go code
 - `make vet` – run `go vet`
 
