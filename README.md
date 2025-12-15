@@ -5,13 +5,14 @@ A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessi
 ## Status
 
 - ✅ WebView window using `github.com/webview/webview_go` with inlined HTML/CSS/JS via `go:embed`
-- ✅ Embedded **xterm.js** terminal with binary-safe streaming between Go and JS
-- ✅ Native Go SSH sessions using `golang.org/x/crypto/ssh`, one persistent session per host
-- ✅ Automatic reconnect logic with per-host status (connected / reconnecting / disconnected)
-- ✅ JSON configuration file (`~/.config/pterminal/pterminal.json`) with networks and hosts, editable from the UI
-- ✅ SSH host key verification, including UX for unknown / mismatched host keys
-- ⚙️ Planned: SSH key + agent flows in the UI, SFTP browser, richer import/export and session UX
-
+- ✅ Embedded **xterm.js** terminal with binary-safe streaming between Go and JS (base64 PTY)
+- ✅ Native Go SSH sessions using `golang.org/x/crypto/ssh`, one persistent session per host + auto-reconnect
+- ✅ Optional **Telecom (IOshell)** driver (PTY local process) for hosts that require it
+- ✅ SFTP support (per-host enable + credential mode) with a **tabbed Files view**
+- ✅ SFTP Files view: search, context menu actions, drag & drop upload, download to `~/Downloads`, in-place edit/save
+- ✅ JSON configuration (`~/.config/pterminal/pterminal.json`) editable from the UI + Import/Export
+- ✅ SSH host key verification + trust UX for unknown/mismatched keys
+- ⚙️ Planned: SSH key + agent flows in UI, richer SFTP (recursive delete, permissions, etc.)
 
 ## Goals & Constraints
 
@@ -23,15 +24,21 @@ A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessi
 
 ## Getting started
 
-### 1) Fetch frontend vendor assets (xterm.js)
+### 0) Prereqs (Linux)
 
-Xterm assets are not committed to the repo; they are fetched on demand with a small npm helper. You need a working `node` + `npm` for this step:
+- Go 1.22+
+- System libraries required by `webview_go` (WebKitGTK) and the native file picker (GTK3).
+  - Package names vary by distro (example on Debian/Ubuntu: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `pkg-config`).
+
+### 1) Fetch/update frontend vendor assets (xterm.js)
+
+Xterm assets live under `internal/ui/assets/vendor/` and are embedded into the Go binary. To update them, you need `node` + `npm`:
 
 ```bash
 make assets
 ```
 
-This downloads `xterm.js`, `xterm.css`, and the `xterm-addon-fit` bundle into `internal/ui/assets/vendor/`, which is then embedded into the Go binary.
+This downloads `xterm.js`, `xterm.css`, and the required addons into `internal/ui/assets/vendor/`.
 
 ### 2) Build & run
 
@@ -73,11 +80,16 @@ A minimal example:
           "host": "192.168.11.90",
           "port": 22,
           "user": "root",
+          "driver": "ssh",
           "auth": {
             "method": "password"
           },
           "hostKey": {
             "mode": "known_hosts"
+          },
+          "sftp": {
+            "enabled": true,
+            "credentials": "connection"
           }
         }
       ]
@@ -85,6 +97,16 @@ A minimal example:
   ]
 }
 ```
+
+### 4) Terminal + Files tabs
+
+- Hosts with SFTP enabled show `Terminal` / `Files` tabs.
+- The Files tab provides a lightweight SFTP file manager:
+  - Search within current directory
+  - Right-click context menu (file/folder aware)
+  - Drag & drop upload into the file list
+  - Download selected file to `~/Downloads`
+  - In-place edit/save for text files (Ctrl+S)
 
 ### 4) Authentication & host keys
 
@@ -97,6 +119,13 @@ A minimal example:
   - `insecure` – skip host key verification (for prototyping only)
 
 The UI exposes a confirmation dialog for unknown / changed host keys and can persist a trusted key via the Go backend.
+
+## Import / Export
+
+- Export writes a timestamped config JSON into `~/Downloads`.
+- Import lets you pick a JSON file and overwrites the active config:
+  - A backup of the previous config is created in `~/.config/pterminal/`
+  - All existing sessions are disconnected (host IDs may change during normalization)
 
 ## Development
 
