@@ -127,12 +127,21 @@ The UI exposes a confirmation dialog for unknown / changed host keys and can per
   - A backup of the previous config is created in `~/.config/pterminal/`
   - All existing sessions are disconnected (host IDs may change during normalization)
 
+## Releases (no root)
+
+Because pTerminal uses WebView (WebKitGTK) + GTK3, a plain Linux binary may require system runtime libraries.
+
+- `make release` produces a small bundle and a dependency checker.
+- `make portable` produces a larger `portable/` folder that tries to bundle shared libs next to the executable and run with `LD_LIBRARY_PATH` (best-effort, Linux-only).
+- GitHub Releases: see `.github/workflows/release-portable.yml` for the portable tarballs built for Ubuntu 24.04 and SUSE bases.
+
 ## Development
 
 - `make assets` – fetch/update xterm.js assets into `internal/ui/assets/vendor/`
 - `make build` – build the `pterminal` binary into `bin/`
 - `make run` – build and run the app
 - `make release` – build an optimized binary bundle into `release/` (includes `.desktop` + icon + helper scripts)
+- `make portable` – build a best-effort “portable folder” into `release/` (bundled shared libs next to the executable)
 - `make fmt` – format Go code
 - `make vet` – run `go vet`
 

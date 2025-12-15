@@ -8,6 +8,7 @@ GOARCH ?= $(shell go env GOARCH)
 RELEASE_DIR := $(RELEASE_ROOT)/pterminal-$(VERSION)-$(GOOS)-$(GOARCH)
 
 LDFLAGS := -s -w
+GO_BUILD_RELEASE_FLAGS := -trimpath -buildvcs=false
 
 .PHONY: build run clean assets fmt vet release portable
 
@@ -34,7 +35,7 @@ release:
 	@mkdir -p "$(RELEASE_DIR)"
 	@echo "Building release: $(RELEASE_DIR)"
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) \
-		go build -trimpath -ldflags "$(LDFLAGS)" -o "$(RELEASE_DIR)/pterminal" ./cmd/pterminal
+		go build $(GO_BUILD_RELEASE_FLAGS) -ldflags "$(LDFLAGS)" -o "$(RELEASE_DIR)/pterminal" ./cmd/pterminal
 	@command -v strip >/dev/null 2>&1 && strip "$(RELEASE_DIR)/pterminal" || true
 	@cp -f packaging/pterminal.desktop "$(RELEASE_DIR)/" || true
 	@cp -f packaging/pterminal.svg "$(RELEASE_DIR)/" || true
@@ -52,7 +53,7 @@ portable:
 	@mkdir -p "$(RELEASE_DIR)"
 	@echo "Building base release: $(RELEASE_DIR)"
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) \
-		go build -trimpath -ldflags "$(LDFLAGS)" -o "$(RELEASE_DIR)/pterminal" ./cmd/pterminal
+		go build $(GO_BUILD_RELEASE_FLAGS) -ldflags "$(LDFLAGS)" -o "$(RELEASE_DIR)/pterminal" ./cmd/pterminal
 	@command -v strip >/dev/null 2>&1 && strip "$(RELEASE_DIR)/pterminal" || true
 	@echo "Building portable folder (best-effort shared libs next to executable)..."
 	@bash scripts/build_portable_bundle.sh "$(RELEASE_DIR)/pterminal" "$(RELEASE_DIR)/portable"

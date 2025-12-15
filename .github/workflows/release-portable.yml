@@ -1,0 +1,96 @@
+name: Release (Portable Linux Bundles)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_prefix:
+        description: "Prefix used inside the bundle folder name (default: tag name or 'dev')"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-portable:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: ubuntu24
+            image: ubuntu:24.04
+          - target: sles15
+            image: opensuse/leap:15.6
+          - target: sles12
+            image: registry.suse.com/suse/sles12sp5:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure vendor assets exist
+        run: |
+          set -euo pipefail
+          test -f internal/ui/assets/vendor/xterm.js || make assets
+
+      - name: Build portable tarball
+        env:
+          TARGET: ${{ matrix.target }}
+          IMAGE: ${{ matrix.image }}
+          VERSION_PREFIX: ${{ inputs.version_prefix }}
+          SLES12_SCC_CREDENTIALS: ${{ secrets.SLES12_SCC_CREDENTIALS }}
+          SLES12_ADDITIONAL_MODULES: ${{ secrets.SLES12_ADDITIONAL_MODULES }}
+          GO_VERSION: "1.22.10"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          prefix="${VERSION_PREFIX}"
+          if [[ -z "${prefix}" ]]; then
+            if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+              prefix="${GITHUB_REF_NAME}"
+            else
+              prefix="dev"
+            fi
+          fi
+
+          scripts/ci/docker_build_portable.sh "${TARGET}" "${IMAGE}" "${prefix}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pterminal-${{ matrix.target }}-portable
+          path: |
+            dist/pterminal-${{ matrix.target }}-portable.tar.gz
+            dist/pterminal-${{ matrix.target }}-portable.tar.gz.sha256
+
+  github-release:
+    if: github.ref_type == 'tag'
+    needs: build-portable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List artifacts
+        run: |
+          set -euo pipefail
+          find dist -type f -maxdepth 3 -print
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**/pterminal-ubuntu24-portable.tar.gz
+            dist/**/pterminal-ubuntu24-portable.tar.gz.sha256
+            dist/**/pterminal-sles15-portable.tar.gz
+            dist/**/pterminal-sles15-portable.tar.gz.sha256
+            dist/**/pterminal-sles12-portable.tar.gz
+            dist/**/pterminal-sles12-portable.tar.gz.sha256
+
