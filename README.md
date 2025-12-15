@@ -7,7 +7,7 @@ A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessi
 - ✅ WebView window using `github.com/webview/webview_go` with inlined HTML/CSS/JS via `go:embed`
 - ✅ Embedded **xterm.js** terminal with binary-safe streaming between Go and JS (base64 PTY)
 - ✅ Native Go SSH sessions using `golang.org/x/crypto/ssh`, one persistent session per host + auto-reconnect
-- ✅ Optional **Telecom (IOshell)** driver (PTY local process) for hosts that require it
+- ✅ Optional driver (PTY local process) for hosts that require it
 - ✅ SFTP support (per-host enable + credential mode) with a **tabbed Files view**
 - ✅ SFTP Files view: search, context menu actions, drag & drop upload, download to `~/Downloads`, in-place edit/save
 - ✅ JSON configuration (`~/.config/pterminal/pterminal.json`) editable from the UI + Import/Export
