@@ -54,6 +54,25 @@ type IOShellConfig struct {
 	Env map[string]string `json:"env,omitempty"`
 }
 
+type SFTPCredentialsMode string
+
+const (
+	SFTPCredsConnection SFTPCredentialsMode = "connection"
+	SFTPCredsCustom     SFTPCredentialsMode = "custom"
+)
+
+type SFTPConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Credentials controls whether SFTP uses the connection credentials or custom ones.
+	// Defaults to "connection" when empty.
+	Credentials SFTPCredentialsMode `json:"credentials,omitempty"`
+
+	// Custom credentials (only when Credentials=custom).
+	User     string `json:"user,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
 type Host struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
@@ -70,7 +89,10 @@ type Host struct {
 
 	IOShell *IOShellConfig `json:"ioshell,omitempty"`
 
-	// Placeholders for future features
+	// SFTP controls per-host SFTP settings (credentials may reuse the SSH connection ones).
+	SFTP *SFTPConfig `json:"sftp,omitempty"`
+
+	// Legacy (kept for backward compatibility with older exported configs).
 	SFTPEnabled bool `json:"sftpEnabled,omitempty"`
 }
 

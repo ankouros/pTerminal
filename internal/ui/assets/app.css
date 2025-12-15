@@ -273,6 +273,145 @@ html, body {
   padding: 8px;
 }
 
+#main-tabs {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.012);
+}
+
+.tab {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 120ms ease, border-color 120ms ease, transform 90ms ease;
+}
+
+.tab:hover { background: rgba(255,255,255,0.07); }
+.tab:active { transform: translateY(1px) scale(0.99); }
+
+.tab.active {
+  background: rgba(90, 167, 255, 0.14);
+  border-color: rgba(90, 167, 255, 0.35);
+}
+
+.tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#files-container {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-main);
+  position: relative;
+  overflow: hidden;
+}
+
+.file-pane {
+  position: absolute;
+  inset: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-path {
+  flex: 1;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+  padding: 0 10px;
+  outline: none;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.file-path:focus { border-color: rgba(90,167,255,0.6); }
+
+.file-search {
+  width: 240px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+  padding: 0 10px;
+  outline: none;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.file-search:focus { border-color: rgba(90,167,255,0.6); }
+
+.file-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+}
+
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.file-table th, .file-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  white-space: nowrap;
+}
+
+.file-table th {
+  position: sticky;
+  top: 0;
+  background: rgba(15,22,33,0.94);
+  text-align: left;
+  font-weight: 700;
+  z-index: 2;
+}
+
+.file-row {
+  cursor: pointer;
+}
+
+.file-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.file-row.selected {
+  background: rgba(90, 167, 255, 0.12);
+}
+
+.file-row.drag-target {
+  outline: 1px solid rgba(90,167,255,0.6);
+  background: rgba(90, 167, 255, 0.08);
+}
+
+.file-muted { color: var(--text-muted); }
+
 #terminal-container .xterm { height: 100%; }
 
 #terminal-container .xterm-viewport {
@@ -345,6 +484,55 @@ html, body {
   border-radius: 14px;
   padding: 16px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+}
+
+.file-edit-card {
+  width: 920px;
+  max-width: calc(100vw - 32px);
+  height: min(78vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+
+.file-edit-card .modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file-edit-meta {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+}
+
+.file-edit-meta .label { opacity: 0.7; }
+
+.file-edit-text {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+  color: var(--text-main);
+  padding: 12px;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.35;
+  outline: none;
+}
+
+.file-edit-text:focus {
+  border-color: rgba(90,167,255,0.6);
 }
 
 .modal-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
@@ -524,6 +712,20 @@ html, body {
 
 .form-row.two {
   grid-template-columns: 1fr 1fr;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox input {
+  width: 16px;
+  height: 16px;
 }
 
 .path-row {

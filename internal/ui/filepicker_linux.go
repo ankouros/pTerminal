@@ -32,6 +32,40 @@ static char* pterminal_pick_executable(void* parent, const char* title) {
   gtk_widget_destroy(dialog);
   return filename; // must be freed by g_free()
 }
+
+static char* pterminal_pick_json(void* parent, const char* title) {
+  GtkWindow* w = (GtkWindow*)parent;
+  GtkWidget* dialog = gtk_file_chooser_dialog_new(
+    title,
+    w,
+    GTK_FILE_CHOOSER_ACTION_OPEN,
+    "_Cancel", GTK_RESPONSE_CANCEL,
+    "_Open", GTK_RESPONSE_ACCEPT,
+    NULL
+  );
+
+  gtk_file_chooser_set_local_only(GTK_FILE_CHOOSER(dialog), TRUE);
+  gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), FALSE);
+  gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog), "/home");
+
+  GtkFileFilter* json = gtk_file_filter_new();
+  gtk_file_filter_set_name(json, "JSON files (*.json)");
+  gtk_file_filter_add_pattern(json, "*.json");
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), json);
+
+  GtkFileFilter* all = gtk_file_filter_new();
+  gtk_file_filter_set_name(all, "All files");
+  gtk_file_filter_add_pattern(all, "*");
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), all);
+
+  char* filename = NULL;
+  if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+    filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+  }
+
+  gtk_widget_destroy(dialog);
+  return filename; // must be freed by g_free()
+}
 */
 import "C"
 
@@ -48,6 +82,22 @@ func (w *Window) pickIOShellExecutablePath() string {
 	defer C.free(unsafe.Pointer(title))
 
 	p := C.pterminal_pick_executable(w.wv.Window(), title)
+	if p == nil {
+		return ""
+	}
+	defer C.g_free(C.gpointer(p))
+	return C.GoString(p)
+}
+
+func (w *Window) pickConfigImportPath() string {
+	if w == nil || w.wv == nil {
+		return ""
+	}
+
+	title := C.CString("Import pTerminal config (.json)")
+	defer C.free(unsafe.Pointer(title))
+
+	p := C.pterminal_pick_json(w.wv.Window(), title)
 	if p == nil {
 		return ""
 	}

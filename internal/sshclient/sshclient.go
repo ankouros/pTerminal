@@ -62,6 +62,42 @@ type NodeSession struct {
 	once   sync.Once
 }
 
+// DialClient establishes an SSH connection and returns an ssh.Client without
+// starting a remote shell/pty. Callers must Close() the returned client.
+func DialClient(
+	ctx context.Context,
+	host model.Host,
+	passwordProvider func() (string, error),
+) (*ssh.Client, func(), error) {
+	cfg, cleanup, err := buildClientConfig(host, passwordProvider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	addr := net.JoinHostPort(host.Host, fmt.Sprint(host.Port))
+
+	dialer := net.Dialer{Timeout: 8 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		return nil, nil, err
+	}
+
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
+	if err != nil {
+		_ = conn.Close()
+		if cleanup != nil {
+			cleanup()
+		}
+		return nil, nil, err
+	}
+
+	client := ssh.NewClient(c, chans, reqs)
+	return client, cleanup, nil
+}
+
 func DialAndStart(
 	ctx context.Context,
 	host model.Host,

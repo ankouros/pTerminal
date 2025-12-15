@@ -360,6 +360,33 @@ func (m *Manager) Disconnect(hostID int) error {
 	return nil
 }
 
+func (m *Manager) DisconnectAll() {
+	m.mu.Lock()
+	sessions := make([]*ManagedSession, 0, len(m.sessions))
+	for _, ms := range m.sessions {
+		if ms != nil {
+			sessions = append(sessions, ms)
+		}
+	}
+	m.sessions = make(map[int]*ManagedSession)
+	m.mu.Unlock()
+
+	for _, ms := range sessions {
+		ms.mu.Lock()
+		ms.AutoReconnect = false
+		sess := ms.Sess
+		ms.Sess = nil
+		ms.State = StateDisconnected
+		ms.Attempts = 0
+		ms.Err = nil
+		ms.mu.Unlock()
+
+		if sess != nil {
+			_ = sess.Close()
+		}
+	}
+}
+
 func (m *Manager) findHost(id int) (model.Host, bool) {
 	m.mu.Lock()
 	cfg := m.cfg

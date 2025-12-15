@@ -131,6 +131,12 @@ func Load() (model.AppConfig, error) {
 	}
 
 	changed := normalizeIDs(&cfg)
+	if migrateSFTP(&cfg) {
+		changed = true
+	}
+	if normalizeSFTP(&cfg) {
+		changed = true
+	}
 	if changed {
 		if err := Save(cfg); err != nil {
 			return model.AppConfig{}, err
@@ -201,6 +207,76 @@ func normalizeIDs(cfg *model.AppConfig) bool {
 		}
 	}
 
+	return changed
+}
+
+func migrateSFTP(cfg *model.AppConfig) bool {
+	changed := false
+	for ni := range cfg.Networks {
+		for hi := range cfg.Networks[ni].Hosts {
+			h := &cfg.Networks[ni].Hosts[hi]
+			if h.SFTP == nil && h.SFTPEnabled {
+				h.SFTP = &model.SFTPConfig{
+					Enabled:     true,
+					Credentials: model.SFTPCredsConnection,
+				}
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+func normalizeSFTP(cfg *model.AppConfig) bool {
+	changed := false
+	for ni := range cfg.Networks {
+		for hi := range cfg.Networks[ni].Hosts {
+			h := &cfg.Networks[ni].Hosts[hi]
+			if h.SFTP == nil {
+				if h.SFTPEnabled {
+					// Prefer structured config; if legacy flag is set, migrate.
+					h.SFTP = &model.SFTPConfig{
+						Enabled:     true,
+						Credentials: model.SFTPCredsConnection,
+					}
+					changed = true
+				}
+				continue
+			}
+
+			if !h.SFTP.Enabled {
+				if h.SFTPEnabled {
+					h.SFTPEnabled = false
+					changed = true
+				}
+				h.SFTP = nil
+				changed = true
+				continue
+			}
+
+			if h.SFTP.Credentials == "" {
+				h.SFTP.Credentials = model.SFTPCredsConnection
+				changed = true
+			}
+			if h.SFTP.Credentials != model.SFTPCredsConnection && h.SFTP.Credentials != model.SFTPCredsCustom {
+				h.SFTP.Credentials = model.SFTPCredsConnection
+				changed = true
+			}
+
+			if h.SFTP.Credentials == model.SFTPCredsConnection {
+				if h.SFTP.User != "" || h.SFTP.Password != "" {
+					h.SFTP.User = ""
+					h.SFTP.Password = ""
+					changed = true
+				}
+			}
+
+			if !h.SFTPEnabled {
+				h.SFTPEnabled = true
+				changed = true
+			}
+		}
+	}
 	return changed
 }
 

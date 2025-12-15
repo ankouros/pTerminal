@@ -37,7 +37,7 @@
         <button id="btn-export" class="btn small" title="Export configuration">
           Export
         </button>
-        <button id="btn-import" class="btn small secondary" disabled title="Import (coming soon)">
+        <button id="btn-import" class="btn small secondary" title="Import configuration (.json)">
           Import
         </button>
         <button id="btn-sftp" class="btn small secondary" disabled title="SFTP browser (coming soon)">
@@ -84,7 +84,13 @@
           </div>
         </header>
 
+        <div id="main-tabs" class="tabs hidden" role="tablist" aria-label="Main tabs">
+          <button id="tab-terminal" class="tab active" role="tab" aria-selected="true">Terminal</button>
+          <button id="tab-files" class="tab" role="tab" aria-selected="false">Files</button>
+        </div>
+
         <div id="terminal-container" role="region" aria-label="Terminal"></div>
+        <div id="files-container" class="hidden" role="region" aria-label="Files"></div>
       </main>
     </div>
   </div>
@@ -95,6 +101,39 @@
     <button id="host-menu-edit" class="context-item" role="menuitem">Edit</button>
     <button id="host-menu-duplicate" class="context-item" role="menuitem">Duplicate</button>
     <button id="host-menu-delete" class="context-item danger" role="menuitem">Delete</button>
+  </div>
+
+  <!-- Files (SFTP) context menu -->
+  <div id="file-menu" class="context-menu hidden" role="menu" aria-label="File menu">
+    <button id="file-menu-open" class="context-item" role="menuitem">Open</button>
+    <button id="file-menu-edit" class="context-item" role="menuitem">Edit</button>
+    <button id="file-menu-download" class="context-item" role="menuitem">Download</button>
+    <button id="file-menu-upload" class="context-item" role="menuitem">Upload…</button>
+    <button id="file-menu-mkdir" class="context-item" role="menuitem">New Folder…</button>
+    <button id="file-menu-rename" class="context-item" role="menuitem">Rename…</button>
+    <button id="file-menu-delete" class="context-item danger" role="menuitem">Delete</button>
+    <button id="file-menu-copy-path" class="context-item" role="menuitem">Copy Path</button>
+    <button id="file-menu-refresh" class="context-item" role="menuitem">Refresh</button>
+  </div>
+
+  <!-- File editor modal -->
+  <div id="file-edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="file-edit-title">
+    <div class="modal-card file-edit-card">
+      <div class="modal-title" id="file-edit-title">Edit file</div>
+      <div class="modal-body">
+        <div class="file-edit-meta">
+          <div class="label">Path</div>
+          <div class="value mono" id="file-edit-path"></div>
+        </div>
+        <textarea id="file-edit-text" class="file-edit-text" spellcheck="false"></textarea>
+        <div class="help">Tip: Ctrl+S to save. Large/binary files are not supported.</div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="file-edit-cancel" class="btn secondary">Cancel</button>
+        <button id="file-edit-save" class="btn primary">Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- About modal -->
@@ -215,6 +254,34 @@
               <label>Password</label>
               <input id="host-password" type="password" placeholder="Optional (stored locally)"
                 autocomplete="new-password" />
+            </div>
+          </div>
+
+          <div class="form-group hidden" data-scope="host">
+            <label class="checkbox">
+              <input id="sftp-enabled" type="checkbox" />
+              Enable SFTP for this host
+            </label>
+            <div class="help">SFTP uses SSH. You can reuse the connection credentials or set custom ones.</div>
+          </div>
+
+          <div class="form-group hidden" id="sftp-cred-group" data-scope="host">
+            <label>SFTP credentials</label>
+            <select id="sftp-cred-mode">
+              <option value="connection">Use connection credentials</option>
+              <option value="custom">Use custom credentials</option>
+            </select>
+          </div>
+
+          <div class="form-row two hidden" id="sftp-custom-row" data-scope="host">
+            <div class="form-group">
+              <label>SFTP user *</label>
+              <input id="sftp-user" type="text" />
+            </div>
+
+            <div class="form-group">
+              <label>SFTP password *</label>
+              <input id="sftp-password" type="password" autocomplete="new-password" />
             </div>
           </div>
 
