@@ -18,25 +18,41 @@ build-options:
   append-path: /usr/lib/sdk/golang/bin
   env:
     CGO_ENABLED: "1"
+  build-args:
+    # Go modules are fetched during build; network access is required.
+    # Without this, DNS commonly fails inside the sandbox (e.g. when /etc/resolv.conf points at 127.0.0.53).
+    - --share=network
 
 modules:
   - name: pterminal
     buildsystem: simple
     build-commands:
-      # webview_go asks pkg-config for webkit2gtk-4.0; GNOME 46 provides 4.1.
       - |
-        pc_path="$(pkg-config --variable pc_path pkg-config)"
-        for d in ${pc_path//:/ }; do
-          if [ -f "${d}/webkit2gtk-4.1.pc" ] && [ ! -f "${d}/webkit2gtk-4.0.pc" ]; then
-            ln -sf "${d}/webkit2gtk-4.1.pc" "${d}/webkit2gtk-4.0.pc"
-          fi
-        done
-      - go version
-      - go env
-      - go build -trimpath -buildvcs=false -ldflags "-s -w" -o /app/bin/pterminal ./cmd/pterminal
-      - install -Dm644 packaging/flatpak/com.github.ankouros.pterminal.desktop /app/share/applications/com.github.ankouros.pterminal.desktop
-      - install -Dm644 packaging/flatpak/com.github.ankouros.pterminal.svg /app/share/icons/hicolor/scalable/apps/com.github.ankouros.pterminal.svg
-      - install -Dm644 packaging/flatpak/com.github.ankouros.pterminal.metainfo.xml /app/share/metainfo/com.github.ankouros.pterminal.metainfo.xml
+        set -euo pipefail
+
+        # webview_go asks pkg-config for webkit2gtk-4.0; GNOME Platform provides 4.1.
+        # The runtime filesystem is read-only, so create an alias .pc file in the build dir.
+        if ! pkg-config --exists webkit2gtk-4.0; then
+          pc_paths="$(pkg-config --variable pc_path pkg-config)"
+          alias_dir="/run/build/pterminal/pkgconfig"
+          mkdir -p "${alias_dir}"
+
+          for d in ${pc_paths//:/ }; do
+            if [ -f "${d}/webkit2gtk-4.1.pc" ]; then
+              ln -sf "${d}/webkit2gtk-4.1.pc" "${alias_dir}/webkit2gtk-4.0.pc"
+              export PKG_CONFIG_PATH="${alias_dir}:${PKG_CONFIG_PATH:-}"
+              break
+            fi
+          done
+        fi
+
+        go version
+        go env
+        go build -trimpath -buildvcs=false -ldflags "-s -w" -o /app/bin/pterminal ./cmd/pterminal
+
+        install -Dm644 packaging/flatpak/com.github.ankouros.pterminal.desktop /app/share/applications/com.github.ankouros.pterminal.desktop
+        install -Dm644 packaging/flatpak/com.github.ankouros.pterminal.svg /app/share/icons/hicolor/scalable/apps/com.github.ankouros.pterminal.svg
+        install -Dm644 packaging/flatpak/com.github.ankouros.pterminal.metainfo.xml /app/share/metainfo/com.github.ankouros.pterminal.metainfo.xml
     sources:
       - type: dir
         path: ../../

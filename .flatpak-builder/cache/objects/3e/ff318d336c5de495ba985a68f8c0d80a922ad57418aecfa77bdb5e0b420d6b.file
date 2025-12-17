@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.ankouros.pterminal</id>
+  <name>pTerminal</name>
+  <summary>Persistent multi-node SSH terminal manager</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      pTerminal is a Linux GUI application written in Go that provides persistent multi-node SSH terminal sessions
+      with a modern WebView (xterm.js) UI, plus an SFTP Files tab.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.github.ankouros.pterminal.desktop</launchable>
+  <provides>
+    <binary>pterminal</binary>
+  </provides>
+</component>
+
