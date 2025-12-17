@@ -6,3 +6,6 @@ release/
 scripts/node_modules/
 scripts/package-lock.json
 dist/
+.flatpak-build/
+.flatpak-builder/
+.flatpak-repo/
