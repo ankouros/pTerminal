@@ -327,7 +327,7 @@ func (m *Manager) dial(
 			return pw(host.ID)
 		})
 
-	case model.DriverIOShell:
+	case model.DriverTelecom, model.DriverIOShell:
 		return cmdclient.StartIOShell(ctx, host, cols, rows)
 
 	default:

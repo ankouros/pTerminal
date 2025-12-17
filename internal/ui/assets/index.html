@@ -235,7 +235,7 @@
 	            <label>Connection *</label>
 	            <select id="host-driver">
 	              <option value="ssh">SSH (native)</option>
-	              <option value="ioshell">Telecom (IOshell)</option>
+	              <option value="telecom">Telecom</option>
 	            </select>
 	          </div>
 
@@ -294,9 +294,9 @@
             </select>
           </div>
 
-          <div class="form-group hidden" data-scope="host" data-driver="ioshell">
+          <div class="form-group hidden" data-scope="host" data-driver="telecom">
             <label>Protocol (-t) *</label>
-            <select id="ioshell-protocol">
+            <select id="telecom-protocol">
               <option value="ssh">ssh</option>
               <option value="telnet">telnet</option>
               <option value="socket">socket</option>
@@ -305,18 +305,18 @@
             </select>
           </div>
 
-          <div class="form-group hidden" data-scope="host" data-driver="ioshell">
+          <div class="form-group hidden" data-scope="host" data-driver="telecom">
             <label>Command to run</label>
-            <input id="ioshell-command" type="text" placeholder="Optional: first command after connect" />
+            <input id="telecom-command" type="text" placeholder="Optional: first command after connect" />
           </div>
 
-          <div class="form-group hidden" data-scope="host" data-driver="ioshell">
-            <label>IOshell Path *</label>
+          <div class="form-group hidden" data-scope="host" data-driver="telecom">
+            <label>Telecom executable *</label>
             <div class="path-row">
-              <input id="ioshell-path" type="text" placeholder="/home/aggelos/IOshell/ioshell_local" />
-              <button id="ioshell-browse" type="button" class="btn small secondary">Browse</button>
+              <input id="telecom-path" type="text" placeholder="/path/to/telecom/entrypoint" />
+              <button id="telecom-browse" type="button" class="btn small secondary">Browse</button>
             </div>
-            <input id="ioshell-path-picker" type="file" class="hidden" />
+            <input id="telecom-path-picker" type="file" class="hidden" />
           </div>
         </form>
       </div>

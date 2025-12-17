@@ -131,6 +131,9 @@ func Load() (model.AppConfig, error) {
 	}
 
 	changed := normalizeIDs(&cfg)
+	if normalizeTelecom(&cfg) {
+		changed = true
+	}
 	if migrateSFTP(&cfg) {
 		changed = true
 	}
@@ -144,6 +147,33 @@ func Load() (model.AppConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func normalizeTelecom(cfg *model.AppConfig) bool {
+	changed := false
+	for ni := range cfg.Networks {
+		for hi := range cfg.Networks[ni].Hosts {
+			h := &cfg.Networks[ni].Hosts[hi]
+
+			// Driver migration: ioshell -> telecom
+			if h.Driver == model.DriverIOShell {
+				h.Driver = model.DriverTelecom
+				changed = true
+			}
+
+			// Field migration: ioshell -> telecom
+			if h.Telecom == nil && h.IOShell != nil {
+				h.Telecom = h.IOShell
+				h.IOShell = nil
+				changed = true
+			}
+			if h.Telecom != nil && h.IOShell != nil {
+				h.IOShell = nil
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 func normalizeIDs(cfg *model.AppConfig) bool {

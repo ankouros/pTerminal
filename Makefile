@@ -10,7 +10,7 @@ RELEASE_DIR := $(RELEASE_ROOT)/pterminal-$(VERSION)-$(GOOS)-$(GOARCH)
 LDFLAGS := -s -w
 GO_BUILD_RELEASE_FLAGS := -trimpath -buildvcs=false
 
-.PHONY: build run clean assets fmt vet release portable
+.PHONY: build run clean assets fmt vet release portable flatpak
 
 build:
 	go build -o $(BIN) ./cmd/pterminal
@@ -61,3 +61,8 @@ portable:
 	@echo "Portable release created:"
 	@echo "  $(RELEASE_DIR)/portable/run_portable.sh"
 	@echo "  $(RELEASE_DIR)-portable.tar.gz"
+
+flatpak:
+	@test -f internal/ui/assets/vendor/xterm.js || (echo "Missing xterm assets. Run: make assets" && exit 1)
+	@mkdir -p dist
+	@scripts/ci/flatpak_build.sh

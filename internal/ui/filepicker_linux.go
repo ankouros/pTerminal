@@ -73,12 +73,12 @@ import (
 	"unsafe"
 )
 
-func (w *Window) pickIOShellExecutablePath() string {
+func (w *Window) pickTelecomExecutablePath() string {
 	if w == nil || w.wv == nil {
 		return ""
 	}
 
-	title := C.CString("Select IOshell executable")
+	title := C.CString("Select Telecom executable")
 	defer C.free(unsafe.Pointer(title))
 
 	p := C.pterminal_pick_executable(w.wv.Window(), title)

@@ -29,14 +29,17 @@ type ConnectionDriver string
 
 const (
 	DriverSSH     ConnectionDriver = "ssh"
+	DriverTelecom ConnectionDriver = "telecom"
+
+	// DriverIOShell is a legacy alias kept for backward compatibility.
 	DriverIOShell ConnectionDriver = "ioshell"
 )
 
-type IOShellConfig struct {
-	// Path to ioshell entrypoint, e.g. /home/aggelos/IOshell/ioshell_local or /home/aggelos/IOshell/bin/ioshell
+type TelecomConfig struct {
+	// Path to the telecom entrypoint executable (local process).
 	Path string `json:"path,omitempty"`
 
-	// Protocol for ioshell "-t" (e.g. ssh/telnet/socket/sea/cmd). If empty, defaults to "ssh".
+	// Protocol for telecom "-t" (e.g. ssh/telnet/socket/sea/cmd). If empty, defaults to "ssh".
 	Protocol string `json:"protocol,omitempty"`
 
 	// Command is the first command to be written to the session after connect (best-effort).
@@ -53,6 +56,9 @@ type IOShellConfig struct {
 	// Optional extra environment variables (merged with the current environment).
 	Env map[string]string `json:"env,omitempty"`
 }
+
+// IOShellConfig is kept as a type alias for backward compatibility.
+type IOShellConfig = TelecomConfig
 
 type SFTPCredentialsMode string
 
@@ -87,6 +93,9 @@ type Host struct {
 	Auth    AuthConfig    `json:"auth"`
 	HostKey HostKeyConfig `json:"hostKey"`
 
+	Telecom *TelecomConfig `json:"telecom,omitempty"`
+
+	// IOShell is a legacy field kept for backward compatibility with older exported configs.
 	IOShell *IOShellConfig `json:"ioshell,omitempty"`
 
 	// SFTP controls per-host SFTP settings (credentials may reuse the SSH connection ones).

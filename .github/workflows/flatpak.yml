@@ -1,0 +1,62 @@
+name: Flatpak
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure vendor assets exist
+        run: |
+          set -euo pipefail
+          test -f internal/ui/assets/vendor/xterm.js || make assets
+
+      - name: Install flatpak tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak --version
+          flatpak-builder --version
+
+      - name: Build Flatpak bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          scripts/ci/flatpak_build.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pterminal-flatpak
+          path: |
+            dist/pterminal.flatpak
+            dist/pterminal.flatpak.sha256
+
+  github-release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pterminal-flatpak
+          path: dist
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/pterminal.flatpak
+            dist/pterminal.flatpak.sha256
+

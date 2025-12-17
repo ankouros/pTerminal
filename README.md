@@ -133,7 +133,8 @@ Because pTerminal uses WebView (WebKitGTK) + GTK3, a plain Linux binary may requ
 
 - `make release` produces a small bundle and a dependency checker.
 - `make portable` produces a larger `portable/` folder that tries to bundle shared libs next to the executable and run with `LD_LIBRARY_PATH` (best-effort, Linux-only).
-- GitHub Releases: see `.github/workflows/release-portable.yml` for the portable tarballs built for Ubuntu 24.04 and SUSE bases.
+- GitHub Releases: see `.github/workflows/release-portable.yml` for the portable tarballs built for Ubuntu 24.04 and openSUSE Leap 15.6.
+- Flatpak (recommended for “out-of-the-box” Linux): `make flatpak` and `.github/workflows/flatpak.yml`.
 
 ## Development
 
@@ -142,6 +143,7 @@ Because pTerminal uses WebView (WebKitGTK) + GTK3, a plain Linux binary may requ
 - `make run` – build and run the app
 - `make release` – build an optimized binary bundle into `release/` (includes `.desktop` + icon + helper scripts)
 - `make portable` – build a best-effort “portable folder” into `release/` (bundled shared libs next to the executable)
+- `make flatpak` – build `dist/pterminal.flatpak` using `flatpak-builder` (Linux)
 - `make fmt` – format Go code
 - `make vet` – run `go vet`
 

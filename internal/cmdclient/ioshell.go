@@ -37,21 +37,25 @@ type ProcessSession struct {
 var _ terminal.Session = (*ProcessSession)(nil)
 
 func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*ProcessSession, error) {
-	if host.IOShell == nil {
-		return nil, errors.New("ioshell config is missing")
+	cfg := host.Telecom
+	if cfg == nil {
+		cfg = host.IOShell
+	}
+	if cfg == nil {
+		return nil, errors.New("telecom config is missing")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	path := strings.TrimSpace(host.IOShell.Path)
+	path := strings.TrimSpace(cfg.Path)
 	if path == "" {
-		return nil, errors.New("ioshell path is empty")
+		return nil, errors.New("telecom path is empty")
 	}
 
-	args := applyPlaceholders(host.IOShell.Args, host)
+	args := applyPlaceholders(cfg.Args, host)
 	if len(args) == 0 {
-		proto := strings.TrimSpace(host.IOShell.Protocol)
+		proto := strings.TrimSpace(cfg.Protocol)
 		if proto == "" {
 			proto = "ssh"
 		}
@@ -67,7 +71,7 @@ func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*Proces
 	cmd := exec.Command(path, args...) //nolint:gosec // user-configured executable path
 
 	// cwd
-	if wd := strings.TrimSpace(host.IOShell.WorkDir); wd != "" {
+	if wd := strings.TrimSpace(cfg.WorkDir); wd != "" {
 		cmd.Dir = wd
 	} else if root := inferIOSHELLRoot(path); root != "" {
 		cmd.Dir = root
@@ -75,10 +79,10 @@ func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*Proces
 
 	// env
 	cmd.Env = os.Environ()
-	if root := inferIOSHELLRoot(path); root != "" && !hasEnvKey(host.IOShell.Env, "IOSHELLROOT") {
+	if root := inferIOSHELLRoot(path); root != "" && !hasEnvKey(cfg.Env, "IOSHELLROOT") {
 		cmd.Env = append(cmd.Env, "IOSHELLROOT="+root)
 	}
-	for k, v := range host.IOShell.Env {
+	for k, v := range cfg.Env {
 		if k == "" {
 			continue
 		}
@@ -87,7 +91,7 @@ func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*Proces
 
 	f, err := pty.Start(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("start ioshell: %w", err)
+		return nil, fmt.Errorf("start telecom: %w", err)
 	}
 
 	s := &ProcessSession{
@@ -96,7 +100,7 @@ func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*Proces
 		pty:         f,
 		output:      make(chan []byte, 128),
 		done:        make(chan struct{}),
-		postCommand: strings.TrimSpace(host.IOShell.Command),
+		postCommand: strings.TrimSpace(cfg.Command),
 	}
 
 	_ = s.Resize(cols, rows)

@@ -26,8 +26,6 @@ jobs:
             image: ubuntu:24.04
           - target: sles15
             image: opensuse/leap:15.6
-          - target: sles12
-            image: registry.suse.com/suse/sles12sp5:latest
 
     steps:
       - uses: actions/checkout@v4
@@ -42,8 +40,6 @@ jobs:
           TARGET: ${{ matrix.target }}
           IMAGE: ${{ matrix.image }}
           VERSION_PREFIX: ${{ inputs.version_prefix }}
-          SLES12_SCC_CREDENTIALS: ${{ secrets.SLES12_SCC_CREDENTIALS }}
-          SLES12_ADDITIONAL_MODULES: ${{ secrets.SLES12_ADDITIONAL_MODULES }}
           GO_VERSION: "1.22.10"
         run: |
           set -euo pipefail
@@ -86,11 +82,7 @@ jobs:
       - name: Publish GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
+          fail_on_unmatched_files: false
           files: |
-            dist/**/pterminal-ubuntu24-portable.tar.gz
-            dist/**/pterminal-ubuntu24-portable.tar.gz.sha256
-            dist/**/pterminal-sles15-portable.tar.gz
-            dist/**/pterminal-sles15-portable.tar.gz.sha256
-            dist/**/pterminal-sles12-portable.tar.gz
-            dist/**/pterminal-sles12-portable.tar.gz.sha256
-
+            dist/**/pterminal-*-portable.tar.gz
+            dist/**/pterminal-*-portable.tar.gz.sha256

@@ -1338,7 +1338,7 @@
     // Auth method
     el("host-auth").value = auth.method || "password";
 
-    // Password field (ssh + ioshell)
+    // Password field (ssh + telecom)
     el("host-password").value = auth.password || "";
 
     // ---- SFTP ----
@@ -1351,10 +1351,10 @@
     el("sftp-user").value = target?.sftp?.user || "";
     el("sftp-password").value = target?.sftp?.password || "";
 
-    // IOshell fields
-    el("ioshell-path").value = target?.ioshell?.path || "";
-    el("ioshell-protocol").value = target?.ioshell?.protocol || "ssh";
-    el("ioshell-command").value = target?.ioshell?.command || "";
+    // Telecom fields
+    el("telecom-path").value = target?.telecom?.path || "";
+    el("telecom-protocol").value = target?.telecom?.protocol || "ssh";
+    el("telecom-command").value = target?.telecom?.command || "";
 
     applyHostDriverVisibility();
     applySFTPVisibility();
@@ -1407,8 +1407,8 @@
         el("host-user").value.trim() &&
         Number(el("host-port").value) > 0 &&
         driver &&
-        (driver !== "ioshell" ||
-          (el("ioshell-path").value.trim() && el("ioshell-protocol").value));
+        (driver !== "telecom" ||
+          (el("telecom-path").value.trim() && el("telecom-protocol").value));
 
       if (ok && el("sftp-enabled")?.checked) {
         const mode = el("sftp-cred-mode")?.value || "connection";
@@ -1429,9 +1429,9 @@
     "host-port",
     "host-driver",
     "host-auth",
-    "ioshell-path",
-    "ioshell-protocol",
-    "ioshell-command",
+    "telecom-path",
+    "telecom-protocol",
+    "telecom-command",
     "sftp-user",
     "sftp-password",
   ].forEach((id) => el(id)?.addEventListener("input", validateEditor));
@@ -1484,12 +1484,12 @@
               password: sftpMode === "custom" ? el("sftp-password").value : "",
             }
           : undefined,
-        ioshell:
-          driver === "ioshell"
+        telecom:
+          driver === "telecom"
             ? {
-                path: el("ioshell-path").value.trim(),
-                protocol: el("ioshell-protocol").value || "ssh",
-                command: el("ioshell-command").value || "",
+                path: el("telecom-path").value.trim(),
+                protocol: el("telecom-protocol").value || "ssh",
+                command: el("telecom-command").value || "",
               }
             : undefined,
       };
@@ -1845,12 +1845,12 @@
 
     setupFileEditorModal();
 
-    // IOshell path picker (prefer native dialog so we get a real absolute path)
-    el("ioshell-browse").onclick = async () => {
+    // Telecom path picker (prefer native dialog so we get a real absolute path)
+    el("telecom-browse").onclick = async () => {
       try {
-        const r = await rpc({ type: "ioshell_pick" });
+        const r = await rpc({ type: "telecom_pick" });
         if (r.path) {
-          el("ioshell-path").value = r.path;
+          el("telecom-path").value = r.path;
           validateEditor();
           return;
         }
@@ -1858,14 +1858,14 @@
         // fall back to file input
       }
 
-      el("ioshell-path-picker").click();
+      el("telecom-path-picker").click();
     };
 
     // Fallback: in some WebViews File objects expose .path
-    el("ioshell-path-picker").addEventListener("change", () => {
-      const f = el("ioshell-path-picker").files?.[0];
+    el("telecom-path-picker").addEventListener("change", () => {
+      const f = el("telecom-path-picker").files?.[0];
       const p = f?.path || "";
-      if (p) el("ioshell-path").value = p;
+      if (p) el("telecom-path").value = p;
       validateEditor();
     });
 

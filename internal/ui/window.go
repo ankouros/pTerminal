@@ -25,8 +25,8 @@ import (
 var assets embed.FS
 
 type Window struct {
-	wv  webview.WebView
-	mgr *session.Manager
+	wv   webview.WebView
+	mgr  *session.Manager
 	sftp *sftpclient.Manager
 
 	// pending host-key trust data
@@ -173,9 +173,9 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			w.mgr.SetConfig(cfg)
 			w.sftp.SetConfig(cfg)
 			return ok(rpcResp{
-				"config":      cfg,
-				"importPath":  path,
-				"backupPath":  backup,
+				"config":       cfg,
+				"importPath":   path,
+				"backupPath":   backup,
 				"disconnected": true,
 			})
 
@@ -462,10 +462,10 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			w.sftp.Disconnect(req.HostID)
 			return ok(nil)
 
-		case "ioshell_pick":
+		case "telecom_pick":
 			// Bind handlers are invoked on the UI thread in this build; dispatching
 			// back to the UI thread and waiting would deadlock.
-			return ok(rpcResp{"path": w.pickIOShellExecutablePath()})
+			return ok(rpcResp{"path": w.pickTelecomExecutablePath()})
 
 		case "about":
 			return ok(rpcResp{"text": "pTerminal – SSH Terminal Manager"})

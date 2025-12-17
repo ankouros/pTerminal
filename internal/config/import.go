@@ -40,6 +40,7 @@ func ImportFromFile(path string) (cfg model.AppConfig, backupPath string, err er
 	}
 
 	_ = normalizeIDs(&cfg)
+	_ = normalizeTelecom(&cfg)
 	_ = migrateSFTP(&cfg)
 	_ = normalizeSFTP(&cfg)
 
