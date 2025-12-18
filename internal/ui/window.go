@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -544,9 +544,10 @@ func (w *Window) startPTYFlushLoop() {
 }
 
 func (w *Window) flushHost(hostID int) bool {
-	const maxBytesPerEval = 256 * 1024
+	const maxBytesPerEval = 96 * 1024
+	const maxBytesPerCycle = 4 * maxBytesPerEval
 
-	chunks := w.mgr.DrainBuffered(hostID)
+	chunks, more := w.mgr.DrainBufferedUpTo(hostID, maxBytesPerCycle)
 	if len(chunks) == 0 {
 		return false
 	}
@@ -579,12 +580,16 @@ func (w *Window) flushHost(hostID int) bool {
 		buf = append(buf, c...)
 	}
 	flush()
+
+	if more {
+		w.kickFlush()
+	}
 	return true
 }
 
 func (w *Window) pushPTY(hostID int, data []byte) {
 	b64 := base64.StdEncoding.EncodeToString(data)
-	js := fmt.Sprintf("window.dispatchPTY(%d,%q)", hostID, b64)
+	js := "window.dispatchPTY(" + strconv.Itoa(hostID) + "," + strconv.Quote(b64) + ")"
 	w.wv.Dispatch(func() { w.wv.Eval(js) })
 }
 

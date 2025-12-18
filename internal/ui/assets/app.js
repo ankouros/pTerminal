@@ -28,15 +28,26 @@
         }[m])
     );
 
-  const b64enc = (s) =>
-    btoa(
-      Array.from(new TextEncoder().encode(s))
-        .map((b) => String.fromCharCode(b))
-        .join("")
-    );
+  const textEncoder = new TextEncoder();
+  const textDecoder = new TextDecoder();
 
-  const b64dec = (s) =>
-    new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0)));
+  function b64enc(s) {
+    const bytes = textEncoder.encode(String(s));
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  function b64dec(s) {
+    const binary = atob(String(s));
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return textDecoder.decode(bytes);
+  }
 
   /* ===================== State ===================== */
 
@@ -69,6 +80,8 @@
   let pasteBuffer = null;
   let pendingInput = "";
   let inputFlushTimer = null;
+  let resizeTimer = null;
+  let lastResize = { cols: 0, rows: 0 };
 
   /* ===================== Terminal ===================== */
 
@@ -82,26 +95,62 @@
     }
   }
 
+  function pumpOutput(entry) {
+    const q = entry.outputQueue;
+    if (!q || q.length === 0) return;
+    if (entry.outputWriting) return;
+
+    const start = performance.now();
+    let combined = "";
+    const maxChars = 64 * 1024;
+    const maxTimeMs = 7; // keep UI responsive
+    let i = entry.outputReadIndex || 0;
+
+    while (i < q.length) {
+      const chunk = q[i++];
+      if (!chunk) continue;
+      combined += b64dec(chunk);
+      if (combined.length >= maxChars) break;
+      if (performance.now() - start >= maxTimeMs) break;
+    }
+
+    if (combined) {
+      entry.outputWriting = true;
+      entry.term.write(combined, () => {
+        entry.outputWriting = false;
+        scheduleOutputFlush(entry);
+      });
+    }
+
+    entry.outputReadIndex = i;
+
+    // Compact periodically to avoid O(n) shifts on every pump.
+    if (entry.outputReadIndex > 128 || entry.outputReadIndex > q.length / 2) {
+      q.splice(0, entry.outputReadIndex);
+      entry.outputReadIndex = 0;
+    }
+
+    // If xterm isn't currently processing a write, keep draining.
+    if (!entry.outputWriting && q.length-(entry.outputReadIndex||0) > 0) {
+      setTimeout(() => pumpOutput(entry), 0);
+    }
+  }
+
   function scheduleOutputFlush(entry) {
     if (!entry || entry.outputFlushScheduled) return;
     entry.outputFlushScheduled = true;
 
     setTimeout(() => {
       entry.outputFlushScheduled = false;
-      const q = entry.outputQueue;
-      if (!q || q.length === 0) return;
-
-      const parts = new Array(q.length);
-      for (let i = 0; i < q.length; i++) parts[i] = b64dec(q[i]);
-      q.length = 0;
-
-      entry.term.write(parts.join(""));
+      pumpOutput(entry);
     }, 0);
   }
 
   function queueInput(data) {
     if (!activeHostId || !data) return;
-    if (activeState !== "connected") return;
+    // Let the backend be authoritative for connection state. The UI state poll can
+    // lag, and blocking here can make the first keystroke after connect "disappear".
+    if (activeState === "disconnected") return;
     pendingInput += data;
 
     if (inputFlushTimer) return;
@@ -122,7 +171,7 @@
           })
         )
         .catch(() => {});
-    }, 8);
+    }, 6);
   }
 
   function ensurePasteBuffer() {
@@ -175,7 +224,7 @@
 
   function sendInputChunk(data) {
     if (!activeHostId || !data) return;
-    if (activeState !== "connected") return;
+    if (activeState === "disconnected") return;
     window
       .rpc(
         JSON.stringify({
@@ -227,7 +276,7 @@
     el("terminal-container").appendChild(pane);
 
     const t = new Terminal({
-      cursorBlink: true,
+      cursorBlink: false,
       fontFamily: "monospace",
       fontSize: 13,
       scrollback: 5000,
@@ -241,7 +290,9 @@
       pane,
       term: t,
       outputQueue: [],
+      outputReadIndex: 0,
       outputFlushScheduled: false,
+      outputWriting: false,
       fitAddon: new FitAddon.FitAddon(),
       clipboardAddon: new ClipboardAddon.ClipboardAddon(),
       searchAddon: new SearchAddon.SearchAddon(),
@@ -357,17 +408,42 @@
       resizeBound = true;
       window.addEventListener("resize", () => {
         if (!term || !activeHostId) return;
-        fitAddon.fit();
-        window
-          .rpc(
-            JSON.stringify({
-              type: "resize",
-              hostId: activeHostId,
-              cols: term.cols,
-              rows: term.rows,
-            })
-          )
-          .catch(() => {});
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          if (!term || !activeHostId) return;
+          fitAddon.fit();
+
+          const cols = term.cols;
+          const rows = term.rows;
+          if (cols === lastResize.cols && rows === lastResize.rows) return;
+          lastResize = { cols, rows };
+
+          window
+            .rpc(
+              JSON.stringify({
+                type: "resize",
+                hostId: activeHostId,
+                cols,
+                rows,
+              })
+            )
+            .catch(() => {});
+        }, 60);
+      });
+    }
+
+    // Ensure clicks inside the terminal area always focus xterm's textarea so the
+    // first keystroke is not lost on some WebViews.
+    if (!window.__pterminalTermFocusBound) {
+      window.__pterminalTermFocusBound = true;
+      el("terminal-container").addEventListener("mousedown", () => {
+        if (activeTab !== "terminal") return;
+        term?.focus?.();
+      });
+      window.addEventListener("focus", () => {
+        if (activeTab !== "terminal") return;
+        term?.focus?.();
       });
     }
   }
@@ -569,8 +645,11 @@
       pane,
       cwd: ".",
       selectedPath: "",
+      selectedRow: null,
+      rowByPath: new Map(),
       entries: [],
       searchQuery: "",
+      searchTimer: null,
       pathEl: pane.querySelector('[data-role="path"]'),
       searchEl: pane.querySelector('[data-role="search"]'),
       bodyEl: pane.querySelector('[data-role="tbody"]'),
@@ -601,7 +680,11 @@
 
     entry.searchEl.addEventListener("input", () => {
       entry.searchQuery = entry.searchEl.value || "";
-      renderFileList(entry);
+      if (entry.searchTimer) clearTimeout(entry.searchTimer);
+      entry.searchTimer = setTimeout(() => {
+        entry.searchTimer = null;
+        renderFileList(entry);
+      }, 90);
     });
     entry.searchEl.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -652,12 +735,15 @@
   function renderFileList(entry) {
     const tbody = entry.bodyEl;
     tbody.innerHTML = "";
+    entry.rowByPath = new Map();
+    entry.selectedRow = null;
 
     const q = (entry.searchQuery || "").trim().toLowerCase();
     const items = q
       ? entry.entries.filter((e) => (e.name || "").toLowerCase().includes(q))
       : entry.entries;
 
+    const frag = document.createDocumentFragment();
     items.forEach((it) => {
       const tr = document.createElement("tr");
       tr.className = "file-row";
@@ -665,7 +751,11 @@
       tr.dataset.path = it.path;
       tr.dataset.isdir = it.isDir ? "1" : "0";
 
-      if (it.path === entry.selectedPath) tr.classList.add("selected");
+      if (it.path === entry.selectedPath) {
+        tr.classList.add("selected");
+        entry.selectedRow = tr;
+      }
+      entry.rowByPath.set(it.path, tr);
 
       tr.innerHTML = `
         <td>${esc(it.isDir ? it.name + "/" : it.name)}</td>
@@ -674,13 +764,11 @@
       `;
 
       tr.addEventListener("click", () => {
-        entry.selectedPath = it.path;
-        renderFileList(entry);
+        setSelectedPath(entry, it.path);
       });
 
       tr.addEventListener("contextmenu", (e) => {
-        entry.selectedPath = it.path;
-        renderFileList(entry);
+        setSelectedPath(entry, it.path);
         openFileMenu(e, {
           hostId: Number(entry.pane.dataset.hostId),
           path: it.path,
@@ -694,7 +782,7 @@
           navigateTo(activeHostId, it.path).catch(() => {});
         } else {
           // convenience: double-click download
-          entry.selectedPath = it.path;
+          setSelectedPath(entry, it.path);
           downloadSelected(activeHostId).catch(() => {});
         }
       });
@@ -726,8 +814,19 @@
           .catch((err) => alert(err.detail || err.error || "Move failed"));
       });
 
-      tbody.appendChild(tr);
+      frag.appendChild(tr);
     });
+    tbody.appendChild(frag);
+  }
+
+  function setSelectedPath(entry, path) {
+    entry.selectedPath = path || "";
+    const next = entry.rowByPath?.get(entry.selectedPath) || null;
+    if (entry.selectedRow && entry.selectedRow !== next) {
+      entry.selectedRow.classList.remove("selected");
+    }
+    if (next) next.classList.add("selected");
+    entry.selectedRow = next;
   }
 
   async function refreshFiles(hostId) {
@@ -744,8 +843,10 @@
     entry.entries = res.entries || [];
     entry.searchEl.value = entry.searchQuery || "";
 
-    // If selection not in listing, clear it.
-    if (entry.selectedPath && !entry.entries.some((e) => e.path === entry.selectedPath)) {
+    if (
+      entry.selectedPath &&
+      !entry.entries.some((e) => e.path === entry.selectedPath)
+    ) {
       entry.selectedPath = "";
     }
 
@@ -983,12 +1084,40 @@
     }
   }
 
-  setInterval(() => {
-    if (!activeHostId) return updateStatus(null);
+  let statePollTimer = null;
+  let statePollInFlight = false;
+
+  function nextStatePollDelay() {
+    if (!activeHostId) return 2500;
+    if (activeState === "reconnecting") return 650;
+    if (activeState === "connected") return 3000;
+    return 3500;
+  }
+
+  function scheduleStatePoll(delayMs = nextStatePollDelay()) {
+    if (statePollTimer) clearTimeout(statePollTimer);
+    statePollTimer = setTimeout(pollState, delayMs);
+  }
+
+  function pollState() {
+    if (statePollInFlight) return scheduleStatePoll(500);
+
+    if (!activeHostId) {
+      updateStatus(null);
+      return scheduleStatePoll();
+    }
+
+    statePollInFlight = true;
     rpc({ type: "state", hostId: activeHostId })
       .then(updateStatus)
-      .catch(() => {});
-  }, 1200);
+      .catch(() => {})
+      .finally(() => {
+        statePollInFlight = false;
+        scheduleStatePoll();
+      });
+  }
+
+  scheduleStatePoll(300);
 
   /* ===================== Rendering ===================== */
 
@@ -1047,24 +1176,26 @@
     connectBtn.classList.remove("hidden");
     connectBtn.textContent = "Connect";
 
-    try {
-      const state = await rpc({ type: "state", hostId: host.id });
-      if (state.state === "connected") {
-        connectBtn.classList.add("hidden");
-      } else if (state.state === "reconnecting") {
-        connectBtn.disabled = true;
-        connectBtn.textContent = "Reconnecting…";
-      } else {
+    showHostMenuAt(e.clientX, e.clientY);
+
+    // Update connect button state asynchronously (avoid menu-open lag).
+    rpc({ type: "state", hostId: host.id })
+      .then((state) => {
+        if (state.state === "connected") {
+          connectBtn.classList.add("hidden");
+        } else if (state.state === "reconnecting") {
+          connectBtn.disabled = true;
+          connectBtn.textContent = "Reconnecting…";
+        } else {
+          connectBtn.disabled = false;
+          connectBtn.textContent = "Connect";
+        }
+      })
+      .catch(() => {
+        // If state fails, keep connect enabled as best effort
         connectBtn.disabled = false;
         connectBtn.textContent = "Connect";
-      }
-    } catch {
-      // If state fails, keep connect enabled as best effort
-      connectBtn.disabled = false;
-      connectBtn.textContent = "Connect";
-    }
-
-    showHostMenuAt(e.clientX, e.clientY);
+      });
   }
 
   function updateFileMenuForTarget(t) {
@@ -1147,13 +1278,15 @@
   function renderNetworks() {
     const sel = el("network-select");
     sel.innerHTML = "";
+    const frag = document.createDocumentFragment();
 
     config.networks.forEach((net) => {
       const opt = document.createElement("option");
       opt.value = net.id;
       opt.textContent = net.name;
-      sel.appendChild(opt);
+      frag.appendChild(opt);
     });
+    sel.appendChild(frag);
 
     if (!activeNetworkId && config.networks.length) {
       activeNetworkId = config.networks[0].id;
@@ -1165,6 +1298,7 @@
   function renderHosts() {
     const container = el("hosts");
     container.innerHTML = "";
+    const frag = document.createDocumentFragment();
 
     const net = config.networks.find((n) => n.id === activeNetworkId);
     if (!net) return;
@@ -1191,8 +1325,9 @@
       div.ondblclick = () => openEditor("host", "edit", h);
       div.oncontextmenu = (e) => openHostMenu(e, h);
 
-      container.appendChild(div);
+      frag.appendChild(div);
     });
+    container.appendChild(frag);
   }
 
   /* ===================== Connection ===================== */

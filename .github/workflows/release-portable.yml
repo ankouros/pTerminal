@@ -64,9 +64,54 @@ jobs:
             dist/pterminal-${{ matrix.target }}-portable.tar.gz
             dist/pterminal-${{ matrix.target }}-portable.tar.gz.sha256
 
+  build-sles12:
+    name: Build sles12
+    runs-on: ubuntu-latest
+    if: secrets.SLES12_SCC_CREDENTIALS != '' || secrets.SLES12_SCC_REGCODE != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure vendor assets exist
+        run: |
+          set -euo pipefail
+          test -f internal/ui/assets/vendor/xterm.js || make assets
+
+      - name: Build portable tarball
+        env:
+          TARGET: sles12
+          IMAGE: registry.suse.com/suse/sles12sp5:latest
+          VERSION_PREFIX: ${{ inputs.version_prefix }}
+          GO_VERSION: "1.22.10"
+          SLES12_SCC_CREDENTIALS: ${{ secrets.SLES12_SCC_CREDENTIALS }}
+          SLES12_SCC_REGCODE: ${{ secrets.SLES12_SCC_REGCODE }}
+          SLES12_SCC_EMAIL: ${{ secrets.SLES12_SCC_EMAIL }}
+          SLES12_ADDITIONAL_PRODUCTS: ${{ secrets.SLES12_ADDITIONAL_PRODUCTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          prefix="${VERSION_PREFIX}"
+          if [[ -z "${prefix}" ]]; then
+            if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+              prefix="${GITHUB_REF_NAME}"
+            else
+              prefix="dev"
+            fi
+          fi
+
+          scripts/ci/docker_build_portable.sh "${TARGET}" "${IMAGE}" "${prefix}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pterminal-sles12-portable
+          path: |
+            dist/pterminal-sles12-portable.tar.gz
+            dist/pterminal-sles12-portable.tar.gz.sha256
+
   github-release:
-    if: github.ref_type == 'tag'
-    needs: build-portable
+    if: github.ref_type == 'tag' && always()
+    needs: [build-portable, build-sles12]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts

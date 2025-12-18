@@ -16,7 +16,7 @@ A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessi
 
 ## Goals & Constraints
 
-- Go + WebView (no GTK/Qt/Electron/Node/Python GUI frameworks)
+- Go + WebView UI (our UI is not built with GTK/Qt/Electron/Node/Python; on Linux `webview_go` uses **WebKitGTK/GTK** under the hood, which we ship via Flatpak and/or bundle best-effort for portable builds)
 - Terminal emulator: **xterm.js** (assets shipped and embedded into the binary)
 - SSH: `golang.org/x/crypto/ssh` (no external `ssh` binary)
 - Single self-contained binary (HTML/CSS/JS embedded via `go:embed`)
@@ -46,6 +46,12 @@ This downloads `xterm.js`, `xterm.css`, and the required addons into `internal/u
 make build
 ./bin/pterminal
 ```
+
+If your distro uses an environment *module system* that ships Go with a **read-only** default module/cache path (common on SLES enterprise setups), our Makefile always forces writable caches under:
+
+- `$XDG_CACHE_HOME/pterminal` (if set), otherwise `$HOME/.cache/pterminal`
+
+No user exports are needed; just run the Makefile targets.
 
 Or, during development:
 
@@ -133,7 +139,7 @@ Because pTerminal uses WebView (WebKitGTK) + GTK3, a plain Linux binary may requ
 
 - `make release` produces a small bundle and a dependency checker.
 - `make portable` produces a larger `portable/` folder that tries to bundle shared libs next to the executable and run with `LD_LIBRARY_PATH` (best-effort, Linux-only).
-- GitHub Releases: see `.github/workflows/release-portable.yml` for the portable tarballs built for Ubuntu 24.04 and openSUSE Leap 15.6.
+- GitHub Releases: see `.github/workflows/release-portable.yml` for portable tarballs built for Ubuntu 24.04 and openSUSE Leap 15.6 (and SLES12 SP5 if SCC credentials are configured in repo secrets).
 - Flatpak (recommended for “out-of-the-box” Linux): `make flatpak` and `.github/workflows/flatpak.yml`.
 
 ## Development
@@ -151,5 +157,5 @@ The hard constraints for this project are:
 
 - No embedding or shelling out to native terminals
 - No X11 `-into` embedding tricks
-- No GTK/Qt/Electron/Node/Python GUI frameworks
+- No dependency on GUI frameworks as a *system-installed requirement* (Flatpak/portable releases may bundle WebKitGTK/GTK runtime)
 - No tmux dependency (optional integration later)

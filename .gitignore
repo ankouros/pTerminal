@@ -1,6 +1,5 @@
 PROJECT_REQUIREMENTS.md
 project_requirements.md
-AGENTS.md
 bin/
 release/
 scripts/node_modules/
@@ -9,3 +8,4 @@ dist/
 .flatpak-build/
 .flatpak-builder/
 .flatpak-repo/
+.cache/

@@ -278,10 +278,22 @@ func (m *Manager) BufferOutput(hostID int, data []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.buffers[hostID] = append(m.buffers[hostID], data)
-	if len(m.buffers[hostID]) > 2000 {
-		m.buffers[hostID] = m.buffers[hostID][len(m.buffers[hostID])-2000:]
+	// Coalesce small chunks to reduce allocations and bridge overhead during bursts.
+	const coalesceIfLastBelow = 8 * 1024
+	const coalesceMaxLastSize = 64 * 1024
+	const maxChunks = 2000
+
+	b := m.buffers[hostID]
+	if n := len(b); n > 0 && len(b[n-1]) < coalesceIfLastBelow && len(b[n-1])+len(data) <= coalesceMaxLastSize {
+		b[n-1] = append(b[n-1], data...)
+	} else {
+		b = append(b, data)
 	}
+
+	if len(b) > maxChunks {
+		b = b[len(b)-maxChunks:]
+	}
+	m.buffers[hostID] = b
 }
 
 func (m *Manager) DrainBuffered(hostID int) [][]byte {
@@ -290,6 +302,35 @@ func (m *Manager) DrainBuffered(hostID int) [][]byte {
 	b := m.buffers[hostID]
 	m.buffers[hostID] = nil
 	return b
+}
+
+func (m *Manager) DrainBufferedUpTo(hostID int, maxBytes int) ([][]byte, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b := m.buffers[hostID]
+	if len(b) == 0 {
+		return nil, false
+	}
+
+	total := 0
+	n := 0
+	for n < len(b) {
+		// Always take at least one chunk.
+		if maxBytes > 0 && n > 0 && total+len(b[n]) > maxBytes {
+			break
+		}
+		total += len(b[n])
+		n++
+		if maxBytes > 0 && total >= maxBytes {
+			break
+		}
+	}
+
+	out := make([][]byte, n)
+	copy(out, b[:n])
+	m.buffers[hostID] = b[n:]
+	return out, len(m.buffers[hostID]) > 0
 }
 
 func (m *Manager) Write(hostID int, b64 string) error {
