@@ -478,3 +478,36 @@ EOF
 }
 
 ensure_xau_pc
+
+ensure_xdmcp_pc() {
+  if pkg-config --exists xdmcp 2>/dev/null; then
+    return 0
+  fi
+
+  local header_ok="false"
+  local lib_ok="false"
+  if have_header /usr/include/X11/Xdmcp.h /usr/local/include/X11/Xdmcp.h; then header_ok="true"; fi
+  if have_so '\<libXdmcp\.so' || have_so_in_fs libXdmcp.so; then lib_ok="true"; fi
+
+  cat >"${out_dir}/xdmcp.pc" <<'EOF'
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: Xdmcp
+Description: X11 Display Manager Control Protocol library (fallback pkg-config)
+Version: 1.1.4
+Libs: -lXdmcp
+Cflags:
+EOF
+
+  if [[ "${header_ok}" != "true" ]]; then
+    echo "WARNING: Created fallback xdmcp.pc, but X11/Xdmcp.h was not found in /usr/include or /usr/local/include." >&2
+  fi
+  if [[ "${lib_ok}" != "true" ]]; then
+    echo "WARNING: Created fallback xdmcp.pc, but libXdmcp.so was not found in the dynamic linker search paths." >&2
+  fi
+}
+
+ensure_xdmcp_pc
