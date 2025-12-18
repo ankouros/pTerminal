@@ -17,12 +17,15 @@ CACHE_BASE ?= $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
 CACHE_ROOT ?= $(CACHE_BASE)/pterminal
 PTERMINAL_GOCACHE := $(CACHE_ROOT)/go-build
 PTERMINAL_GOMODCACHE := $(CACHE_ROOT)/go-mod
+PTERMINAL_PKGCONFIG := $(CACHE_ROOT)/pkgconfig
 
 .PHONY: build run clean assets fmt vet release portable flatpak
 
 build:
-	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)"
-	GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
+	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
+	@bash scripts/ensure_pkgconfig_fallback.sh "$(PTERMINAL_PKGCONFIG)"
+	PKG_CONFIG_PATH="$(PTERMINAL_PKGCONFIG):$${PKG_CONFIG_PATH:-}" \
+		GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
 		go build -o $(BIN) ./cmd/pterminal
 
 run: build
@@ -35,8 +38,10 @@ fmt:
 	gofmt -w .
 
 vet:
-	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)"
-	GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
+	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
+	@bash scripts/ensure_pkgconfig_fallback.sh "$(PTERMINAL_PKGCONFIG)"
+	PKG_CONFIG_PATH="$(PTERMINAL_PKGCONFIG):$${PKG_CONFIG_PATH:-}" \
+		GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
 		go vet ./...
 
 clean:
@@ -46,8 +51,10 @@ release:
 	@test -f internal/ui/assets/vendor/xterm.js || (echo "Missing xterm assets. Run: make assets" && exit 1)
 	@mkdir -p "$(RELEASE_DIR)"
 	@echo "Building release: $(RELEASE_DIR)"
-	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)"
-	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
+	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
+	@bash scripts/ensure_pkgconfig_fallback.sh "$(PTERMINAL_PKGCONFIG)"
+	PKG_CONFIG_PATH="$(PTERMINAL_PKGCONFIG):$${PKG_CONFIG_PATH:-}" \
+		CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
 		go build $(GO_BUILD_RELEASE_FLAGS) -ldflags "$(LDFLAGS)" -o "$(RELEASE_DIR)/pterminal" ./cmd/pterminal
 	@command -v strip >/dev/null 2>&1 && strip "$(RELEASE_DIR)/pterminal" || true
 	@cp -f packaging/pterminal.desktop "$(RELEASE_DIR)/" || true
@@ -65,8 +72,10 @@ portable:
 	@test -f internal/ui/assets/vendor/xterm.js || (echo "Missing xterm assets. Run: make assets" && exit 1)
 	@mkdir -p "$(RELEASE_DIR)"
 	@echo "Building base release: $(RELEASE_DIR)"
-	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)"
-	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
+	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
+	@bash scripts/ensure_pkgconfig_fallback.sh "$(PTERMINAL_PKGCONFIG)"
+	PKG_CONFIG_PATH="$(PTERMINAL_PKGCONFIG):$${PKG_CONFIG_PATH:-}" \
+		CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
 		go build $(GO_BUILD_RELEASE_FLAGS) -ldflags "$(LDFLAGS)" -o "$(RELEASE_DIR)/pterminal" ./cmd/pterminal
 	@command -v strip >/dev/null 2>&1 && strip "$(RELEASE_DIR)/pterminal" || true
 	@echo "Building portable folder (best-effort shared libs next to executable)..."
