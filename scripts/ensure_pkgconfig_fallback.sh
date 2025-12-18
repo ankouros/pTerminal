@@ -421,3 +421,27 @@ EOF
 }
 
 ensure_blkid_pc
+
+ensure_pthread_stubs_pc() {
+  if pkg-config --exists pthread-stubs 2>/dev/null; then
+    return 0
+  fi
+
+  # Most toolchains provide pthreads via libc; many distros don't ship a separate
+  # libpthread-stubs at all. Some X11-related .pc files still Require it, so a
+  # minimal pkg-config stub is enough to satisfy resolution.
+  cat >"${out_dir}/pthread-stubs.pc" <<'EOF'
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: pthread-stubs
+Description: Stub pthread library (pkg-config fallback)
+Version: 0.4
+Libs:
+Cflags:
+EOF
+}
+
+ensure_pthread_stubs_pc
