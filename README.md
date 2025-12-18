@@ -53,7 +53,7 @@ If your distro uses an environment *module system* that ships Go with a **read-o
 
 No user exports are needed; just run the Makefile targets.
 
-On some enterprise module environments, `pkg-config` metadata can be incomplete (example: `freetype2.pc` may `Require: bzip2` but no `bzip2.pc` is installed). The Makefile automatically creates a minimal fallback `bzip2.pc` under the same cache directory and prepends it to `PKG_CONFIG_PATH` for builds.
+On some enterprise module environments, `pkg-config` metadata can be incomplete (example: `freetype2.pc` may `Require: bzip2` or `fontconfig.pc` may `Require: uuid` but the corresponding `.pc` file is missing). The Makefile automatically creates minimal fallback `.pc` files under the same cache directory and prepends them to `PKG_CONFIG_PATH` for builds.
 
 Or, during development:
 
