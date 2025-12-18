@@ -445,3 +445,36 @@ EOF
 }
 
 ensure_pthread_stubs_pc
+
+ensure_xau_pc() {
+  if pkg-config --exists xau 2>/dev/null; then
+    return 0
+  fi
+
+  local header_ok="false"
+  local lib_ok="false"
+  if have_header /usr/include/X11/Xauth.h /usr/local/include/X11/Xauth.h; then header_ok="true"; fi
+  if have_so '\<libXau\.so' || have_so_in_fs libXau.so; then lib_ok="true"; fi
+
+  cat >"${out_dir}/xau.pc" <<'EOF'
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: Xau
+Description: X11 authorisation library (fallback pkg-config)
+Version: 1.0.11
+Libs: -lXau
+Cflags:
+EOF
+
+  if [[ "${header_ok}" != "true" ]]; then
+    echo "WARNING: Created fallback xau.pc, but X11/Xauth.h was not found in /usr/include or /usr/local/include." >&2
+  fi
+  if [[ "${lib_ok}" != "true" ]]; then
+    echo "WARNING: Created fallback xau.pc, but libXau.so was not found in the dynamic linker search paths." >&2
+  fi
+}
+
+ensure_xau_pc
