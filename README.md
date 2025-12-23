@@ -141,8 +141,9 @@ Because pTerminal uses WebView (WebKitGTK) + GTK3, a plain Linux binary may requ
 
 - `make release` produces a small bundle and a dependency checker.
 - `make portable` produces a larger `portable/` folder that tries to bundle shared libs next to the executable and run with `LD_LIBRARY_PATH` (best-effort, Linux-only).
-- GitHub Releases: see `.github/workflows/release-portable.yml` for portable tarballs built for Ubuntu 24.04 and openSUSE Leap 15.6 (and SLES12 SP5 if SCC credentials are configured in repo secrets).
+- GitHub Releases: see `.github/workflows/release-portable.yml` for portable tarballs built for Ubuntu 24.04.
 - Flatpak (recommended for “out-of-the-box” Linux): `make flatpak` and `.github/workflows/flatpak.yml`.
+- Docker image (GUI via host X11/Wayland): build/push with `scripts/docker/` and run with `scripts/docker/run_image.sh`.
 
 ## Development
 

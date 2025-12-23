@@ -32,11 +32,12 @@ type ProcessSession struct {
 	promptBuf      string
 
 	once sync.Once
+	wg   sync.WaitGroup
 }
 
 var _ terminal.Session = (*ProcessSession)(nil)
 
-func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*ProcessSession, error) {
+func StartTelecom(ctx context.Context, host model.Host, cols, rows int) (*ProcessSession, error) {
 	cfg := host.Telecom
 	if cfg == nil {
 		cfg = host.IOShell
@@ -73,14 +74,15 @@ func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*Proces
 	// cwd
 	if wd := strings.TrimSpace(cfg.WorkDir); wd != "" {
 		cmd.Dir = wd
-	} else if root := inferIOSHELLRoot(path); root != "" {
+	} else if root := inferTelecomRoot(path); root != "" {
 		cmd.Dir = root
 	}
 
 	// env
 	cmd.Env = os.Environ()
-	if root := inferIOSHELLRoot(path); root != "" && !hasEnvKey(cfg.Env, "IOSHELLROOT") {
-		cmd.Env = append(cmd.Env, "IOSHELLROOT="+root)
+	if root := inferTelecomRoot(path); root != "" && !hasEnvKey(cfg.Env, "TELECOMROOT") && !hasEnvKey(cfg.Env, "IOSHELLROOT") {
+		// Telecom toolchain may expect legacy root variables; keep compatibility.
+		cmd.Env = append(cmd.Env, "TELECOMROOT="+root, "IOSHELLROOT="+root)
 	}
 	for k, v := range cfg.Env {
 		if k == "" {
@@ -98,14 +100,18 @@ func StartIOShell(ctx context.Context, host model.Host, cols, rows int) (*Proces
 		Host:        host,
 		cmd:         cmd,
 		pty:         f,
-		output:      make(chan []byte, 128),
+		output:      make(chan []byte, 512),
 		done:        make(chan struct{}),
 		postCommand: strings.TrimSpace(cfg.Command),
 	}
 
 	_ = s.Resize(cols, rows)
 
-	go s.pump(f)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.pump(f)
+	}()
 	go func() {
 		_ = cmd.Wait()
 		_ = s.Close()
@@ -126,9 +132,9 @@ func (s *ProcessSession) pump(r io.Reader) {
 			copy(b, buf[:n])
 			s.maybeRunCommand(b)
 			select {
+			case <-s.done:
+				return
 			case s.output <- b:
-			default:
-				// drop if UI can't keep up; output is also buffered in manager
 			}
 		}
 		if err != nil {
@@ -139,7 +145,7 @@ func (s *ProcessSession) pump(r io.Reader) {
 
 func (s *ProcessSession) maybeRunCommand(chunk []byte) {
 	// Only attempt the "first command" after the user has interacted at least once.
-	// This avoids interfering with IOshell's own login prompts/flows.
+	// This avoids interfering with Telecom's own login prompts/flows.
 	if s.commandSent || s.postCommand == "" || s.pty == nil || !s.userInteracted {
 		return
 	}
@@ -231,9 +237,6 @@ func (s *ProcessSession) Resize(cols, rows int) error {
 func (s *ProcessSession) Close() error {
 	var err error
 	s.once.Do(func() {
-		close(s.done)
-		close(s.output)
-
 		if s.pty != nil {
 			_ = s.pty.Close()
 			s.pty = nil
@@ -242,17 +245,20 @@ func (s *ProcessSession) Close() error {
 			_ = s.cmd.Process.Kill()
 			_, _ = s.cmd.Process.Wait()
 		}
+		close(s.done)
+		s.wg.Wait()
+		close(s.output)
 	})
 	return err
 }
 
-func inferIOSHELLRoot(path string) string {
+func inferTelecomRoot(path string) string {
 	p := filepath.Clean(path)
-	// /.../IOshell/bin/ioshell -> /.../IOshell
+	// /.../Telecom/bin/telecom -> /.../Telecom
 	if strings.HasSuffix(p, string(filepath.Separator)+"bin"+string(filepath.Separator)+"ioshell") {
 		return filepath.Dir(filepath.Dir(p))
 	}
-	// /.../IOshell/ioshell_local -> /.../IOshell
+	// /.../Telecom/telecom_local -> /.../Telecom
 	if strings.HasSuffix(p, string(filepath.Separator)+"ioshell_local") {
 		return filepath.Dir(p)
 	}

@@ -9,3 +9,7 @@ dist/
 .flatpak-builder/
 .flatpak-repo/
 .cache/
+
+# Local Docker credentials/env (do not commit)
+.env
+scripts/docker/.env

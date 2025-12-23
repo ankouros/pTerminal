@@ -6,6 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +27,41 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
+func validateWebView(wv webview.WebView) error {
+	if wv == nil {
+		return errors.New("webview init failed (nil)")
+	}
+
+	// webview_go does not surface errors from C.webview_create; when it fails it
+	// can return a webview instance with a nil internal handle, which later
+	// segfaults on any call (e.g. SetTitle). Detect this via reflection.
+	defer func() {
+		_ = recover()
+	}()
+
+	rv := reflect.ValueOf(wv)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return nil
+	}
+	ev := rv.Elem()
+	if ev.Kind() != reflect.Struct {
+		return nil
+	}
+	f := ev.FieldByName("w")
+	if !f.IsValid() {
+		return nil
+	}
+	if f.Kind() == reflect.UnsafePointer && f.Pointer() == 0 {
+		display := os.Getenv("DISPLAY")
+		wayland := os.Getenv("WAYLAND_DISPLAY")
+		if display == "" && wayland == "" {
+			return errors.New("GUI init failed: DISPLAY/WAYLAND_DISPLAY not set")
+		}
+		return fmt.Errorf("GUI init failed (webview handle is nil); if running in Docker ensure display sockets + auth are passed (DISPLAY/Wayland/XAUTHORITY)")
+	}
+	return nil
+}
+
 type Window struct {
 	wv   webview.WebView
 	mgr  *session.Manager
@@ -33,27 +71,53 @@ type Window struct {
 	pendingTrust map[int]pendingKey
 
 	// per-host password cache (memory only)
+	pwMu    sync.RWMutex
 	pwCache map[int]string
 
 	activeHostID atomic.Int64
+	activeTabID  atomic.Int64
 
 	attachedMu sync.Mutex
-	attached   map[int]terminal.Session
+	attached   map[attachKey]terminal.Session
 
 	flushCancel context.CancelFunc
 	flushCh     chan struct{}
+
+	ioCancel context.CancelFunc
+	inputCh  chan inputMsg
+	resizeCh chan resizeMsg
 }
 
 type pendingKey struct {
+	kind        string
 	hostPort    string
 	fingerprint string
 	key         ssh.PublicKey
+}
+
+type inputMsg struct {
+	hostID  int
+	tabID   int
+	dataB64 string
+}
+
+type resizeMsg struct {
+	hostID int
+	tabID  int
+	cols   int
+	rows   int
+}
+
+type attachKey struct {
+	hostID int
+	tabID  int
 }
 
 type rpcReq struct {
 	Type string `json:"type"`
 
 	HostID int `json:"hostId,omitempty"`
+	TabID  int `json:"tabId,omitempty"`
 	Cols   int `json:"cols,omitempty"`
 	Rows   int `json:"rows,omitempty"`
 
@@ -71,6 +135,18 @@ type rpcReq struct {
 }
 
 type rpcResp map[string]any
+
+func (w *Window) getCachedPassword(hostID int) string {
+	w.pwMu.RLock()
+	defer w.pwMu.RUnlock()
+	return w.pwCache[hostID]
+}
+
+func (w *Window) setCachedPassword(hostID int, pw string) {
+	w.pwMu.Lock()
+	w.pwCache[hostID] = pw
+	w.pwMu.Unlock()
+}
 
 func ok(extra rpcResp) string {
 	if extra == nil {
@@ -92,14 +168,21 @@ func fail(code string, extra rpcResp) string {
 }
 
 func NewWindow(mgr *session.Manager) (*Window, error) {
+	wv := webview.New(true)
+	if err := validateWebView(wv); err != nil {
+		return nil, err
+	}
+
 	w := &Window{
-		wv:           webview.New(true),
+		wv:           wv,
 		mgr:          mgr,
 		sftp:         sftpclient.NewManager(mgr.Config()),
 		pendingTrust: make(map[int]pendingKey),
 		pwCache:      make(map[int]string),
-		attached:     make(map[int]terminal.Session),
+		attached:     make(map[attachKey]terminal.Session),
 		flushCh:      make(chan struct{}, 1),
+		inputCh:      make(chan inputMsg, 16384),
+		resizeCh:     make(chan resizeMsg, 256),
 	}
 
 	w.wv.SetTitle("pTerminal")
@@ -116,7 +199,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 		// PasswordB64 to avoid prompting repeatedly.
 		if req.HostID != 0 && req.PasswordB64 != "" {
 			if pw, err := b64dec(req.PasswordB64); err == nil && pw != "" {
-				w.pwCache[req.HostID] = pw
+				w.setCachedPassword(req.HostID, pw)
 			}
 		}
 
@@ -167,8 +250,14 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			w.sftp.DisconnectAll()
 
 			w.pendingTrust = make(map[int]pendingKey)
+			w.pwMu.Lock()
 			w.pwCache = make(map[int]string)
+			w.pwMu.Unlock()
 			w.activeHostID.Store(0)
+			w.activeTabID.Store(0)
+			w.attachedMu.Lock()
+			w.attached = make(map[attachKey]terminal.Session)
+			w.attachedMu.Unlock()
 
 			w.mgr.SetConfig(cfg)
 			w.sftp.SetConfig(cfg)
@@ -184,7 +273,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			defer cancel()
 
 			entries, cwd, err := w.sftp.List(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -193,6 +282,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 				var unk sshclient.ErrUnknownHostKey
 				if errors.As(err, &unk) {
 					w.pendingTrust[req.HostID] = pendingKey{
+						kind:        "unknown_host_key",
 						hostPort:    unk.HostPort,
 						fingerprint: unk.Fingerprint,
 						key:         unk.Key,
@@ -205,6 +295,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 				var mismatch sshclient.ErrHostKeyMismatch
 				if errors.As(err, &mismatch) {
 					w.pendingTrust[req.HostID] = pendingKey{
+						kind:        "host_key_mismatch",
 						hostPort:    mismatch.HostPort,
 						fingerprint: mismatch.Fingerprint,
 						key:         mismatch.Key,
@@ -225,7 +316,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := w.sftp.MkdirAll(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -238,7 +329,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := w.sftp.Remove(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -251,7 +342,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := w.sftp.Rename(ctx, req.HostID, req.From, req.To, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -264,7 +355,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			out, err := w.sftp.DownloadToDownloads(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -278,7 +369,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			id, err := w.sftp.BeginUpload(ctx, req.HostID, req.Dir, req.Name, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -318,7 +409,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			defer cancel()
 			const max = 2 * 1024 * 1024
 			b, err := w.sftp.ReadFile(ctx, req.HostID, req.Path, max, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -339,7 +430,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := w.sftp.WriteFile(ctx, req.HostID, req.Path, data, func(hostID int) (string, error) {
-				if pw := w.pwCache[hostID]; pw != "" {
+				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
@@ -349,65 +440,79 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			return ok(nil)
 
 		case "select":
+			hostID := req.HostID
+			if hostID == 0 {
+				return fail("bad_request", nil)
+			}
+			tabID := req.TabID
+			if tabID <= 0 {
+				tabID = 1
+			}
+
 			// Cache password if provided (from config or prompt)
 			if req.PasswordB64 != "" {
 				if pw, err := b64dec(req.PasswordB64); err == nil && pw != "" {
 					// never overwrite a valid cached password with empty data
-					w.pwCache[req.HostID] = pw
+					w.setCachedPassword(hostID, pw)
 				}
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-
-			sess, err := w.mgr.Ensure(ctx, req.HostID, req.Cols, req.Rows, func(id int) (string, error) {
-				if pw := w.pwCache[id]; pw != "" {
+			// Start connecting asynchronously to avoid blocking the WebView UI thread.
+			sess, alreadyConnected, err := w.mgr.StartConnectAsync(hostID, tabID, req.Cols, req.Rows, func(id int) (string, error) {
+				if pw := w.getCachedPassword(id); pw != "" {
 					return pw, nil
 				}
 				// only request password if NONE was ever provided
 				return "", errors.New("password_required")
+			}, func(sess terminal.Session, err error) {
+				if err != nil {
+					var unk sshclient.ErrUnknownHostKey
+					if errors.As(err, &unk) {
+						w.wv.Dispatch(func() {
+							w.pendingTrust[hostID] = pendingKey{
+								kind:        "unknown_host_key",
+								hostPort:    unk.HostPort,
+								fingerprint: unk.Fingerprint,
+								key:         unk.Key,
+							}
+						})
+						return
+					}
+
+					var mismatch sshclient.ErrHostKeyMismatch
+					if errors.As(err, &mismatch) {
+						w.wv.Dispatch(func() {
+							w.pendingTrust[hostID] = pendingKey{
+								kind:        "host_key_mismatch",
+								hostPort:    mismatch.HostPort,
+								fingerprint: mismatch.Fingerprint,
+								key:         mismatch.Key,
+							}
+						})
+						return
+					}
+					return
+				}
+
+				if sess != nil {
+					w.ensureAttached(hostID, tabID, sess)
+					if int(w.activeHostID.Load()) == hostID && int(w.activeTabID.Load()) == tabID {
+						w.kickFlush()
+					}
+				}
 			})
-
 			if err != nil {
-
-				var unk sshclient.ErrUnknownHostKey
-				if errors.As(err, &unk) {
-					w.pendingTrust[req.HostID] = pendingKey{
-						hostPort:    unk.HostPort,
-						fingerprint: unk.Fingerprint,
-						key:         unk.Key,
-					}
-					return fail("unknown_host_key", rpcResp{
-						"hostPort":    unk.HostPort,
-						"fingerprint": unk.Fingerprint,
-					})
-				}
-
-				var mismatch sshclient.ErrHostKeyMismatch
-				if errors.As(err, &mismatch) {
-					w.pendingTrust[req.HostID] = pendingKey{
-						hostPort:    mismatch.HostPort,
-						fingerprint: mismatch.Fingerprint,
-						key:         mismatch.Key,
-					}
-					return fail("host_key_mismatch", rpcResp{
-						"hostPort":    mismatch.HostPort,
-						"fingerprint": mismatch.Fingerprint,
-					})
-				}
-
-				if err.Error() == "password_required" {
-					return fail("password_required", nil)
-				}
-
 				return fail("connect_failed", rpcResp{"detail": err.Error()})
 			}
 
-			w.activeHostID.Store(int64(req.HostID))
-			w.ensureAttached(req.HostID, sess)
-			_ = w.flushHost(req.HostID)
+			w.activeHostID.Store(int64(hostID))
+			w.activeTabID.Store(int64(tabID))
+			if alreadyConnected && sess != nil {
+				w.ensureAttached(hostID, tabID, sess)
+				_ = w.flushHost(hostID, tabID)
+			}
 
-			return ok(nil)
+			return ok(rpcResp{"started": true})
 
 		case "trust_host":
 			p := w.pendingTrust[req.HostID]
@@ -424,42 +529,93 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			if req.HostID == 0 || req.DataB64 == "" {
 				return fail("bad_input", nil)
 			}
-
-			if err := w.mgr.Write(req.HostID, req.DataB64); err != nil {
-				return fail("write_failed", rpcResp{
-					"detail": err.Error(),
-				})
-			}
-
+			// Bind handlers are invoked on the UI thread in this build; never block
+			// the UI thread on network/PTY writes. Enqueue to a worker instead.
+			w.inputCh <- inputMsg{hostID: req.HostID, tabID: req.TabID, dataB64: req.DataB64}
 			return ok(nil)
 
 		case "resize":
-			if err := w.mgr.Resize(req.HostID, req.Cols, req.Rows); err != nil {
-				return fail("resize_failed", rpcResp{"detail": err.Error()})
+			// Also avoid blocking the UI thread on SSH window-change requests.
+			if req.HostID != 0 && req.Cols > 0 && req.Rows > 0 {
+				select {
+				case w.resizeCh <- resizeMsg{hostID: req.HostID, tabID: req.TabID, cols: req.Cols, rows: req.Rows}:
+				default:
+					// Best effort; a later resize will win.
+				}
 			}
 			return ok(nil)
 
 		case "state":
-			info := w.mgr.SessionInfo(req.HostID)
+			info := w.mgr.SessionInfoTab(req.HostID, req.TabID)
 			state := "disconnected"
 			if info.State == session.StateConnected {
 				state = "connected"
 			} else if info.State == session.StateReconnecting {
 				state = "reconnecting"
 			}
-			return ok(rpcResp{
-				"state":    state,
-				"attempts": info.Attempts,
-			})
+
+			resp := rpcResp{
+				"hostId":    req.HostID,
+				"tabId":     req.TabID,
+				"state":     state,
+				"attempts":  info.Attempts,
+				"detail":    info.LastErr,
+				"connected": info.State == session.StateConnected,
+			}
+
+			// Host key trust hints (also used for reconnect failures)
+			if p := w.pendingTrust[req.HostID]; p.key != nil {
+				resp["errCode"] = p.kind
+				resp["hostPort"] = p.hostPort
+				resp["fingerprint"] = p.fingerprint
+				return ok(resp)
+			}
+
+			if info.Err != nil {
+				var unk sshclient.ErrUnknownHostKey
+				if errors.As(info.Err, &unk) {
+					w.pendingTrust[req.HostID] = pendingKey{
+						kind:        "unknown_host_key",
+						hostPort:    unk.HostPort,
+						fingerprint: unk.Fingerprint,
+						key:         unk.Key,
+					}
+					resp["errCode"] = "unknown_host_key"
+					resp["hostPort"] = unk.HostPort
+					resp["fingerprint"] = unk.Fingerprint
+				}
+
+				var mismatch sshclient.ErrHostKeyMismatch
+				if errors.As(info.Err, &mismatch) {
+					w.pendingTrust[req.HostID] = pendingKey{
+						kind:        "host_key_mismatch",
+						hostPort:    mismatch.HostPort,
+						fingerprint: mismatch.Fingerprint,
+						key:         mismatch.Key,
+					}
+					resp["errCode"] = "host_key_mismatch"
+					resp["hostPort"] = mismatch.HostPort
+					resp["fingerprint"] = mismatch.Fingerprint
+				}
+
+				if info.LastErr == "password_required" {
+					resp["errCode"] = "password_required"
+				}
+			}
+
+			return ok(resp)
 
 		case "disconnect":
 			if req.HostID == 0 {
 				return fail("bad_request", nil)
 			}
-			if err := w.mgr.Disconnect(req.HostID); err != nil {
+			if err := w.mgr.DisconnectTab(req.HostID, req.TabID); err != nil {
 				return fail("disconnect_failed", rpcResp{"detail": err.Error()})
 			}
 			w.sftp.Disconnect(req.HostID)
+			w.attachedMu.Lock()
+			delete(w.attached, attachKey{hostID: req.HostID, tabID: req.TabID})
+			w.attachedMu.Unlock()
 			return ok(nil)
 
 		case "telecom_pick":
@@ -478,28 +634,63 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 	html, _ := w.buildInlinedHTML()
 	w.wv.SetHtml(html)
 
+	w.startIOLoops()
 	w.startPTYFlushLoop()
 	return w, nil
 }
 
-func (w *Window) attachOutput(hostID int, sess terminal.Session) {
+func (w *Window) startIOLoops() {
+	ctx, cancel := context.WithCancel(context.Background())
+	w.ioCancel = cancel
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-w.inputCh:
+				if !ok {
+					return
+				}
+				_ = w.mgr.WriteTab(msg.hostID, msg.tabID, msg.dataB64)
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-w.resizeCh:
+				if !ok {
+					return
+				}
+				_ = w.mgr.ResizeTab(msg.hostID, msg.tabID, msg.cols, msg.rows)
+			}
+		}
+	}()
+}
+
+func (w *Window) attachOutput(hostID, tabID int, sess terminal.Session) {
 	for chunk := range sess.Output() {
-		w.mgr.BufferOutput(hostID, chunk)
-		if int(w.activeHostID.Load()) == hostID {
+		w.mgr.BufferOutputTab(hostID, tabID, chunk)
+		if int(w.activeHostID.Load()) == hostID && int(w.activeTabID.Load()) == tabID {
 			w.kickFlush()
 		}
 	}
 }
 
-func (w *Window) ensureAttached(hostID int, sess terminal.Session) {
+func (w *Window) ensureAttached(hostID, tabID int, sess terminal.Session) {
 	w.attachedMu.Lock()
 	defer w.attachedMu.Unlock()
 
-	if w.attached[hostID] == sess {
+	k := attachKey{hostID: hostID, tabID: tabID}
+	if w.attached[k] == sess {
 		return
 	}
-	w.attached[hostID] = sess
-	go w.attachOutput(hostID, sess)
+	w.attached[k] = sess
+	go w.attachOutput(hostID, tabID, sess)
 }
 
 func (w *Window) kickFlush() {
@@ -535,29 +726,31 @@ func (w *Window) startPTYFlushLoop() {
 			case <-timer.C:
 				pending = false
 				hostID := int(w.activeHostID.Load())
-				if hostID != 0 {
-					_ = w.flushHost(hostID)
+				tabID := int(w.activeTabID.Load())
+				if hostID != 0 && tabID != 0 {
+					_ = w.flushHost(hostID, tabID)
 				}
 			}
 		}
 	}()
 }
 
-func (w *Window) flushHost(hostID int) bool {
+func (w *Window) flushHost(hostID, tabID int) bool {
 	const maxBytesPerEval = 96 * 1024
 	const maxBytesPerCycle = 4 * maxBytesPerEval
 
-	chunks, more := w.mgr.DrainBufferedUpTo(hostID, maxBytesPerCycle)
+	chunks, more := w.mgr.DrainBufferedUpToTab(hostID, tabID, maxBytesPerCycle)
 	if len(chunks) == 0 {
 		return false
 	}
 
 	buf := make([]byte, 0, 32*1024)
+	b64s := make([]string, 0, len(chunks)+1)
 	flush := func() {
 		if len(buf) == 0 {
 			return
 		}
-		w.pushPTY(hostID, buf)
+		b64s = append(b64s, base64.StdEncoding.EncodeToString(buf))
 		buf = buf[:0]
 	}
 
@@ -569,7 +762,7 @@ func (w *Window) flushHost(hostID int) bool {
 				if end > len(c) {
 					end = len(c)
 				}
-				w.pushPTY(hostID, c[start:end])
+				b64s = append(b64s, base64.StdEncoding.EncodeToString(c[start:end]))
 			}
 			continue
 		}
@@ -581,15 +774,38 @@ func (w *Window) flushHost(hostID int) bool {
 	}
 	flush()
 
+	w.pushPTYB64Batch(hostID, tabID, b64s)
+
 	if more {
 		w.kickFlush()
 	}
 	return true
 }
 
-func (w *Window) pushPTY(hostID int, data []byte) {
-	b64 := base64.StdEncoding.EncodeToString(data)
-	js := "window.dispatchPTY(" + strconv.Itoa(hostID) + "," + strconv.Quote(b64) + ")"
+func (w *Window) pushPTYB64Batch(hostID, tabID int, chunks []string) {
+	if len(chunks) == 0 {
+		return
+	}
+
+	hid := strconv.Itoa(hostID)
+	tid := strconv.Itoa(tabID)
+	var sb strings.Builder
+	sb.WriteString("(function(){")
+	for _, b64 := range chunks {
+		if b64 == "" {
+			continue
+		}
+		sb.WriteString("window.dispatchPTY(")
+		sb.WriteString(hid)
+		sb.WriteByte(',')
+		sb.WriteString(tid)
+		sb.WriteByte(',')
+		sb.WriteString(strconv.Quote(b64))
+		sb.WriteString(");")
+	}
+	sb.WriteString("})()")
+
+	js := sb.String()
 	w.wv.Dispatch(func() { w.wv.Eval(js) })
 }
 
@@ -604,11 +820,6 @@ func (w *Window) buildInlinedHTML() (string, error) {
 	clipboardJS, _ := assets.ReadFile("assets/vendor/xterm-addon-clipboard.js")
 	searchJS, _ := assets.ReadFile("assets/vendor/xterm-addon-search.js")
 	webLinksJS, _ := assets.ReadFile("assets/vendor/xterm-addon-web-links.js")
-	webglJS, _ := assets.ReadFile("assets/vendor/xterm-addon-webgl.js")
-	serializeJS, _ := assets.ReadFile("assets/vendor/xterm-addon-serialize.js")
-	unicode11JS, _ := assets.ReadFile("assets/vendor/xterm-addon-unicode11.js")
-	ligaturesJS, _ := assets.ReadFile("assets/vendor/xterm-addon-ligatures.js")
-	imageJS, _ := assets.ReadFile("assets/vendor/xterm-addon-image.js")
 
 	s := string(index)
 	s = strings.ReplaceAll(s, `<link rel="stylesheet" href="vendor/xterm.css" />`, "<style>"+string(xtermCSS)+"</style>")
@@ -622,11 +833,6 @@ func (w *Window) buildInlinedHTML() (string, error) {
 	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-clipboard.js"></script>`, "<script>"+string(clipboardJS)+"</script>")
 	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-search.js"></script>`, "<script>"+string(searchJS)+"</script>")
 	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-web-links.js"></script>`, "<script>"+string(webLinksJS)+"</script>")
-	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-webgl.js"></script>`, "<script>"+string(webglJS)+"</script>")
-	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-serialize.js"></script>`, "<script>"+string(serializeJS)+"</script>")
-	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-unicode11.js"></script>`, "<script>"+string(unicode11JS)+"</script>")
-	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-ligatures.js"></script>`, "<script>"+string(ligaturesJS)+"</script>")
-	s = strings.ReplaceAll(s, `<script src="vendor/xterm-addon-image.js"></script>`, "<script>"+string(imageJS)+"</script>")
 	s = strings.ReplaceAll(s, `<script src="app.js"></script>`, "<script>"+string(appJS)+"</script>")
 	return s, nil
 }
@@ -635,6 +841,15 @@ func (w *Window) Run() { w.wv.Run() }
 func (w *Window) Close() {
 	if w.flushCancel != nil {
 		w.flushCancel()
+	}
+	if w.ioCancel != nil {
+		w.ioCancel()
+	}
+	if w.inputCh != nil {
+		close(w.inputCh)
+	}
+	if w.resizeCh != nil {
+		close(w.resizeCh)
 	}
 	if w.sftp != nil {
 		w.sftp.DisconnectAll()

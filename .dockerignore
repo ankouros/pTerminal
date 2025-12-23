@@ -1,0 +1,12 @@
+.git
+.github
+.flatpak-build
+.flatpak-builder
+.flatpak-repo
+.cache
+bin
+dist
+release
+scripts/node_modules
+scripts/docker/.env
+**/.env

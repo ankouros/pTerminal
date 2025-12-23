@@ -41,12 +41,16 @@
     return btoa(binary);
   }
 
-  function b64dec(s) {
+  function b64decBytes(s) {
     const binary = atob(String(s));
     const len = binary.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-    return textDecoder.decode(bytes);
+    return bytes;
+  }
+
+  function b64decText(s) {
+    return textDecoder.decode(b64decBytes(s));
   }
 
   /* ===================== State ===================== */
@@ -54,11 +58,12 @@
   let config = null;
   let activeNetworkId = null;
   let activeHostId = null;
+  let activeTermTabId = null;
   let activeState = "disconnected";
   let activeTab = "terminal"; // terminal | files
   let activeHostHasSFTP = false;
 
-  const hostTerms = new Map(); // hostId -> { pane, term, fitAddon, clipboardAddon, searchAddon, ... }
+  const hostTerminals = new Map(); // hostId -> { tabs, tabOrder, tabNames, activeTabId, nextTabId, lastState }
   let activePane = null;
 
   const hostFiles = new Map(); // hostId -> { pane, cwd, selectedPath, entries, fileInput }
@@ -69,11 +74,6 @@
   let clipboardAddon = null;
   let searchAddon = null;
   let webLinksAddon = null;
-  let webglAddon = null;
-  let serializeAddon = null;
-  let unicode11Addon = null;
-  let ligaturesAddon = null;
-  let imageAddon = null;
   let resizeBound = false;
   let clipboardBound = false;
 
@@ -82,6 +82,7 @@
   let inputFlushTimer = null;
   let resizeTimer = null;
   let lastResize = { cols: 0, rows: 0 };
+  let inputInFlight = false;
 
   /* ===================== Terminal ===================== */
 
@@ -101,20 +102,33 @@
     if (entry.outputWriting) return;
 
     const start = performance.now();
-    let combined = "";
-    const maxChars = 64 * 1024;
+    const parts = [];
+    let totalBytes = 0;
+    const maxBytes = 96 * 1024;
     const maxTimeMs = 7; // keep UI responsive
     let i = entry.outputReadIndex || 0;
 
     while (i < q.length) {
       const chunk = q[i++];
       if (!chunk) continue;
-      combined += b64dec(chunk);
-      if (combined.length >= maxChars) break;
+      const bytes = b64decBytes(chunk);
+      parts.push(bytes);
+      totalBytes += bytes.length;
+      if (totalBytes >= maxBytes) break;
       if (performance.now() - start >= maxTimeMs) break;
     }
 
-    if (combined) {
+    if (totalBytes > 0) {
+      let combined = parts[0];
+      if (parts.length > 1) {
+        combined = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const p of parts) {
+          combined.set(p, offset);
+          offset += p.length;
+        }
+      }
+
       entry.outputWriting = true;
       entry.term.write(combined, () => {
         entry.outputWriting = false;
@@ -146,32 +160,56 @@
     }, 0);
   }
 
+  function flushPendingInputSoon() {
+    if (inputFlushTimer) return;
+    inputFlushTimer = setTimeout(flushPendingInputNow, 6);
+  }
+
+  function flushPendingInputNow() {
+    if (inputFlushTimer) {
+      clearTimeout(inputFlushTimer);
+      inputFlushTimer = null;
+    }
+    if (inputInFlight) return;
+
+    const hostId = activeHostId;
+    const tabId = activeTermTabId;
+    const toSend = pendingInput;
+    pendingInput = "";
+    if (!hostId || !tabId || !toSend) return;
+    inputInFlight = true;
+
+    window
+      .rpc(
+        JSON.stringify({
+          type: "input",
+          hostId,
+          tabId,
+          dataB64: b64enc(toSend),
+        })
+      )
+      .catch(() => {})
+      .finally(() => {
+        inputInFlight = false;
+        if (pendingInput) flushPendingInputSoon();
+      });
+  }
+
   function queueInput(data) {
-    if (!activeHostId || !data) return;
+    if (!activeHostId || !activeTermTabId || !data) return;
     // Let the backend be authoritative for connection state. The UI state poll can
     // lag, and blocking here can make the first keystroke after connect "disappear".
     if (activeState === "disconnected") return;
+
     pendingInput += data;
 
-    if (inputFlushTimer) return;
-    inputFlushTimer = setTimeout(() => {
-      const hostId = activeHostId;
-      const toSend = pendingInput;
-      pendingInput = "";
-      inputFlushTimer = null;
-      if (!hostId || !toSend) return;
+    // If Enter is pressed, flush immediately so the remote runs and responds ASAP.
+    if (data.includes("\r")) {
+      flushPendingInputNow();
+      return;
+    }
 
-      // High-frequency path: avoid JSON parsing and just fire-and-forget.
-      window
-        .rpc(
-          JSON.stringify({
-            type: "input",
-            hostId,
-            dataB64: b64enc(toSend),
-          })
-        )
-        .catch(() => {});
-    }, 6);
+    flushPendingInputSoon();
   }
 
   function ensurePasteBuffer() {
@@ -223,13 +261,14 @@
   }
 
   function sendInputChunk(data) {
-    if (!activeHostId || !data) return;
+    if (!activeHostId || !activeTermTabId || !data) return;
     if (activeState === "disconnected") return;
     window
       .rpc(
         JSON.stringify({
           type: "input",
           hostId: activeHostId,
+          tabId: activeTermTabId,
           dataB64: b64enc(data),
         })
       )
@@ -268,20 +307,62 @@
     term?.focus?.();
   }
 
-  function createTerminalForHost(hostId) {
+  function ensureHostTerminalState(hostId) {
+    let state = hostTerminals.get(hostId);
+    if (!state) {
+      state = {
+        tabs: new Map(), // tabId -> entry
+        tabOrder: [1],
+        tabNames: new Map([[1, "Tab 1"]]),
+        activeTabId: 1,
+        nextTabId: 2,
+        lastState: new Map(), // tabId -> { state, attempts, detail, errCode }
+      };
+      hostTerminals.set(hostId, state);
+    }
+
+    if (!Array.isArray(state.tabOrder) || state.tabOrder.length === 0) {
+      state.tabOrder = [1];
+    }
+    if (!(state.tabNames instanceof Map)) state.tabNames = new Map();
+    if (!(state.tabs instanceof Map)) state.tabs = new Map();
+    if (!(state.lastState instanceof Map)) state.lastState = new Map();
+
+    if (!state.activeTabId || !state.tabOrder.includes(state.activeTabId)) {
+      state.activeTabId = state.tabOrder[0];
+    }
+
+    const maxId = Math.max(0, ...state.tabOrder);
+    if (!state.nextTabId || state.nextTabId <= maxId) state.nextTabId = maxId + 1;
+
+    for (const id of state.tabOrder) {
+      if (!state.tabNames.has(id)) state.tabNames.set(id, `Tab ${id}`);
+    }
+
+    return state;
+  }
+
+  function ensureTabMeta(state, tabId) {
+    if (!state.tabOrder.includes(tabId)) state.tabOrder.push(tabId);
+    if (!state.tabNames.has(tabId)) state.tabNames.set(tabId, `Tab ${tabId}`);
+    if (tabId >= state.nextTabId) state.nextTabId = tabId + 1;
+  }
+
+  function createTerminalForTab(hostId, tabId) {
+    const state = ensureHostTerminalState(hostId);
+    ensureTabMeta(state, tabId);
+
     const pane = document.createElement("div");
-    // Create visible; we'll hide other panes in activateTerminalForHost.
-    pane.className = "term-pane";
+    pane.className = "term-pane hidden";
     pane.dataset.hostId = String(hostId);
+    pane.dataset.tabId = String(tabId);
     el("terminal-container").appendChild(pane);
 
     const t = new Terminal({
       cursorBlink: false,
       fontFamily: "monospace",
       fontSize: 13,
-      scrollback: 5000,
-      // Required for some addons (e.g. unicode11, ligatures, image)
-      allowProposedApi: true,
+      scrollback: 2000,
     });
 
     t.open(pane);
@@ -297,11 +378,6 @@
       clipboardAddon: new ClipboardAddon.ClipboardAddon(),
       searchAddon: new SearchAddon.SearchAddon(),
       webLinksAddon: new WebLinksAddon.WebLinksAddon(),
-      webglAddon: new WebglAddon.WebglAddon(),
-      serializeAddon: new SerializeAddon.SerializeAddon(),
-      unicode11Addon: new Unicode11Addon.Unicode11Addon(),
-      ligaturesAddon: new LigaturesAddon.LigaturesAddon(),
-      imageAddon: new ImageAddon.ImageAddon(),
     };
 
     // Load core addons first; optional ones are best-effort.
@@ -309,17 +385,6 @@
     safeLoadAddon(t, entry.clipboardAddon, "clipboard");
     safeLoadAddon(t, entry.searchAddon, "search");
     safeLoadAddon(t, entry.webLinksAddon, "web-links");
-    safeLoadAddon(t, entry.serializeAddon, "serialize");
-    safeLoadAddon(t, entry.unicode11Addon, "unicode11");
-    safeLoadAddon(t, entry.webglAddon, "webgl");
-    safeLoadAddon(t, entry.ligaturesAddon, "ligatures");
-    safeLoadAddon(t, entry.imageAddon, "image");
-
-    try {
-      t.unicode.activeVersion = "11";
-    } catch {
-      // ignore
-    }
 
     t.onData(queueInput);
 
@@ -349,11 +414,125 @@
       return true;
     });
 
-    hostTerms.set(hostId, entry);
+    state.tabs.set(tabId, entry);
     return entry;
   }
 
-  function activateTerminalForHost(hostId) {
+  function getTerminalEntry(hostId, tabId) {
+    const state = ensureHostTerminalState(hostId);
+    const id = Number(tabId) || state.activeTabId || 1;
+    let entry = state.tabs.get(id);
+    if (!entry) entry = createTerminalForTab(hostId, id);
+    return { state, tabId: id, entry };
+  }
+
+  function renderTerminalTabBar() {
+    const bar = el("terminal-tabs");
+    const list = el("terminal-tab-list");
+    if (!bar || !list) return;
+
+    if (!activeHostId || activeTab !== "terminal") {
+      bar.classList.add("hidden");
+      list.innerHTML = "";
+      return;
+    }
+
+    bar.classList.remove("hidden");
+
+    const state = ensureHostTerminalState(activeHostId);
+    list.innerHTML = "";
+
+    const canClose = state.tabOrder.length > 1;
+    for (const id of state.tabOrder) {
+      const btn = document.createElement("div");
+      btn.className = "term-tab" + (id === state.activeTabId ? " active" : "");
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-selected", id === state.activeTabId ? "true" : "false");
+      btn.title = "Double-click to rename";
+
+      const label = document.createElement("span");
+      label.textContent = state.tabNames.get(id) || `Tab ${id}`;
+
+      btn.appendChild(label);
+
+      if (canClose) {
+        const close = document.createElement("span");
+        close.className = "term-tab-close";
+        close.textContent = "×";
+        close.title = "Close tab";
+        close.onclick = (e) => {
+          e.stopPropagation();
+          closeTerminalTab(activeHostId, id);
+        };
+        btn.appendChild(close);
+      }
+
+      btn.onclick = () => {
+        const host = findHostById(activeHostId);
+        if (!host) return;
+        connectHostTab(host, id).catch(() => {});
+      };
+
+      btn.ondblclick = (e) => {
+        e.preventDefault();
+        renameTerminalTab(activeHostId, id);
+      };
+
+      list.appendChild(btn);
+    }
+  }
+
+  function renameTerminalTab(hostId, tabId) {
+    const state = ensureHostTerminalState(hostId);
+    const current = state.tabNames.get(tabId) || `Tab ${tabId}`;
+    const next = prompt("Tab name:", current);
+    if (!next) return;
+    state.tabNames.set(tabId, String(next).trim() || current);
+    renderTerminalTabBar();
+  }
+
+  function closeTerminalTab(hostId, tabId) {
+    const state = ensureHostTerminalState(hostId);
+    if (state.tabOrder.length <= 1) return;
+
+    rpc({ type: "disconnect", hostId, tabId }).catch(() => {});
+
+    const entry = state.tabs.get(tabId);
+    if (entry) {
+      try {
+        entry.term?.dispose?.();
+      } catch {}
+      try {
+        entry.pane?.remove?.();
+      } catch {}
+    }
+    state.tabs.delete(tabId);
+    state.tabNames.delete(tabId);
+    state.lastState.delete(tabId);
+    state.tabOrder = state.tabOrder.filter((id) => id !== tabId);
+
+    if (activeHostId === hostId && activeTermTabId === tabId) {
+      const nextId = state.tabOrder[0] || 1;
+      state.activeTabId = nextId;
+      activeTermTabId = nextId;
+      const host = findHostById(hostId);
+      if (host) connectHostTab(host, nextId).catch(() => {});
+    }
+
+    renderTerminalTabBar();
+  }
+
+  function addTerminalTab(host) {
+    const state = ensureHostTerminalState(host.id);
+    const tabId = state.nextTabId++;
+    ensureTabMeta(state, tabId);
+    state.activeTabId = tabId;
+    activeTermTabId = tabId;
+    renderTerminalTabBar();
+    connectHostTab(host, tabId).catch(() => {});
+  }
+
+  function activateTerminalForHostTab(hostId, tabId) {
     if (!hostId) {
       if (activePane) activePane.classList.add("hidden");
       activePane = null;
@@ -362,17 +541,20 @@
       clipboardAddon = null;
       searchAddon = null;
       webLinksAddon = null;
-      webglAddon = null;
-      serializeAddon = null;
-      unicode11Addon = null;
-      ligaturesAddon = null;
-      imageAddon = null;
+      activeTermTabId = null;
       updateTerminalActions();
+      renderTerminalTabBar();
       return;
     }
 
-    let entry = hostTerms.get(hostId);
-    if (!entry) entry = createTerminalForHost(hostId);
+    const state = ensureHostTerminalState(hostId);
+    const id = Number(tabId) || state.activeTabId || 1;
+    ensureTabMeta(state, id);
+    state.activeTabId = id;
+    activeTermTabId = id;
+
+    let entry = state.tabs.get(id);
+    if (!entry) entry = createTerminalForTab(hostId, id);
 
     if (activePane && activePane !== entry.pane) activePane.classList.add("hidden");
     entry.pane.classList.remove("hidden");
@@ -383,16 +565,12 @@
     clipboardAddon = entry.clipboardAddon;
     searchAddon = entry.searchAddon;
     webLinksAddon = entry.webLinksAddon;
-    webglAddon = entry.webglAddon;
-    serializeAddon = entry.serializeAddon;
-    unicode11Addon = entry.unicode11Addon;
-    ligaturesAddon = entry.ligaturesAddon;
-    imageAddon = entry.imageAddon;
 
     // Defer a tick so layout is settled (avoids "not opened" / 0-size issues in some WebViews).
     requestAnimationFrame(() => fitAddon?.fit?.());
     term.focus();
     updateTerminalActions();
+    renderTerminalTabBar();
 
     if (!clipboardBound) {
       clipboardBound = true;
@@ -407,11 +585,11 @@
     if (!resizeBound) {
       resizeBound = true;
       window.addEventListener("resize", () => {
-        if (!term || !activeHostId) return;
+        if (!term || !activeHostId || !activeTermTabId) return;
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
           resizeTimer = null;
-          if (!term || !activeHostId) return;
+          if (!term || !activeHostId || !activeTermTabId) return;
           fitAddon.fit();
 
           const cols = term.cols;
@@ -424,6 +602,7 @@
               JSON.stringify({
                 type: "resize",
                 hostId: activeHostId,
+                tabId: activeTermTabId,
                 cols,
                 rows,
               })
@@ -448,9 +627,23 @@
     }
   }
 
-  window.dispatchPTY = (hostId, b64) => {
-    const entry = hostTerms.get(hostId);
-    if (!entry) return;
+  function nextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  async function fitTerminalAndGetSize() {
+    if (!term || !fitAddon) return { cols: 80, rows: 24 };
+    // Two frames helps on WebView where layout/font metrics settle late.
+    await nextFrame();
+    fitAddon.fit();
+    await nextFrame();
+    fitAddon.fit();
+    return { cols: term.cols, rows: term.rows };
+  }
+
+  window.dispatchPTY = (hostId, tabId, b64) => {
+    if (!hostId || !b64) return;
+    const { entry } = getTerminalEntry(hostId, tabId);
     entry.outputQueue.push(b64);
     scheduleOutputFlush(entry);
   };
@@ -485,12 +678,28 @@
     el("files-container").classList.toggle("hidden", tab !== "files");
 
     updateTerminalActions();
+    renderTerminalTabBar();
 
     if (tab === "files" && activeHostId) {
       ensureFilePane(activeHostId);
       refreshFiles(activeHostId).catch(() => {});
     } else if (tab === "terminal") {
-      requestAnimationFrame(() => fitAddon?.fit?.());
+      requestAnimationFrame(() => {
+        fitAddon?.fit?.();
+        if (activeHostId && activeTermTabId && activeState === "connected" && term) {
+          window
+            .rpc(
+              JSON.stringify({
+                type: "resize",
+                hostId: activeHostId,
+                tabId: activeTermTabId,
+                cols: term.cols,
+                rows: term.rows,
+              })
+            )
+            .catch(() => {});
+        }
+      });
       term?.focus?.();
     }
   }
@@ -1034,7 +1243,7 @@
   async function openFileEditor(hostId, remotePath) {
     if (!hostId || !remotePath) return;
     const r = await sftpRpc(hostId, { type: "sftp_read", path: remotePath });
-    const text = b64dec(r.dataB64 || "");
+    const text = b64decText(r.dataB64 || "");
 
     el("file-edit-path").textContent = remotePath;
     el("file-edit-text").value = text;
@@ -1061,7 +1270,7 @@
       activeState = "disconnected";
       status.classList.add("status-disconnected");
       text.textContent = "disconnected";
-      attempts.textContent = "";
+      attempts.textContent = state?.detail ? ` (${state.detail})` : "";
       updateTerminalActions();
       return;
     }
@@ -1078,7 +1287,7 @@
     if (state.state === "reconnecting") {
       activeState = "reconnecting";
       status.classList.add("status-reconnecting");
-      text.textContent = "reconnecting";
+      text.textContent = state.attempts ? "reconnecting" : "connecting";
       attempts.textContent = state.attempts ? ` (#${state.attempts})` : "";
       updateTerminalActions();
     }
@@ -1086,6 +1295,9 @@
 
   let statePollTimer = null;
   let statePollInFlight = false;
+  const trustPrompted = new Set();
+  const passwordPrompted = new Set();
+  let lastConnectedKey = null;
 
   function nextStatePollDelay() {
     if (!activeHostId) return 2500;
@@ -1102,14 +1314,94 @@
   function pollState() {
     if (statePollInFlight) return scheduleStatePoll(500);
 
-    if (!activeHostId) {
+    if (!activeHostId || !activeTermTabId) {
       updateStatus(null);
       return scheduleStatePoll();
     }
 
+    const pollHostId = activeHostId;
+    const pollTabId = activeTermTabId;
+
     statePollInFlight = true;
-    rpc({ type: "state", hostId: activeHostId })
-      .then(updateStatus)
+    rpc({ type: "state", hostId: pollHostId, tabId: pollTabId })
+      .then((s) => {
+        if (pollHostId !== activeHostId || pollTabId !== activeTermTabId) return;
+        const hostId = pollHostId;
+        const tabId = pollTabId;
+
+        try {
+          const state = ensureHostTerminalState(hostId);
+          state.lastState.set(tabId, s);
+        } catch {}
+
+        if (s.state === "connected") {
+          trustPrompted.delete(hostId);
+          passwordPrompted.delete(hostId);
+          updateStatus(s);
+
+          const key = `${hostId}:${tabId}`;
+          if (lastConnectedKey !== key) {
+            lastConnectedKey = key;
+            // Best-effort: re-fit and send a resize after the connection is live.
+            fitTerminalAndGetSize()
+              .then(() =>
+                rpc({
+                  type: "resize",
+                  hostId,
+                  tabId,
+                  cols: term?.cols || 80,
+                  rows: term?.rows || 24,
+                })
+              )
+              .catch(() => {});
+          }
+          return;
+        }
+
+        // Host key trust needed
+        if (
+          (s.errCode === "unknown_host_key" || s.errCode === "host_key_mismatch") &&
+          s.hostPort &&
+          s.fingerprint &&
+          !trustPrompted.has(hostId)
+        ) {
+          trustPrompted.add(hostId);
+          const host = findHostById(hostId);
+          if (host) {
+            showTrustDialogAsync(hostId, s.hostPort, s.fingerprint)
+              .then(() => {
+                trustPrompted.delete(hostId);
+                connectHost(host);
+              })
+              .catch(() => {
+                // user canceled; keep disconnected
+              });
+          }
+        }
+
+        // Password auth needed
+        if (s.errCode === "password_required" && !passwordPrompted.has(hostId)) {
+          const host = findHostById(hostId);
+          const driver = host?.driver || "ssh";
+          if (host && driver === "ssh" && host.auth?.method === "password") {
+            passwordPrompted.add(hostId);
+            const pw = prompt(`Password for ${host.user}@${host.host}:`);
+            if (pw) {
+              host.auth.password = pw;
+              saveConfig();
+              connectHost(host);
+            } else {
+              passwordPrompted.delete(hostId);
+            }
+          }
+        }
+
+        if (lastConnectedKey === `${hostId}:${tabId}` && s.state !== "connected") {
+          lastConnectedKey = null;
+        }
+
+        updateStatus(s);
+      })
       .catch(() => {})
       .finally(() => {
         statePollInFlight = false;
@@ -1179,7 +1471,7 @@
     showHostMenuAt(e.clientX, e.clientY);
 
     // Update connect button state asynchronously (avoid menu-open lag).
-    rpc({ type: "state", hostId: host.id })
+    rpc({ type: "state", hostId: host.id, tabId: 1 })
       .then((state) => {
         if (state.state === "connected") {
           connectBtn.classList.add("hidden");
@@ -1333,20 +1625,30 @@
   /* ===================== Connection ===================== */
 
   async function connectHost(host) {
+    const state = ensureHostTerminalState(host.id);
+    const tabId = state.activeTabId || 1;
+    return connectHostTab(host, tabId);
+  }
+
+  async function connectHostTab(host, tabId) {
     try {
       activeHostId = host.id;
       activeState = "reconnecting";
       el("title").textContent = `${host.name} (${host.user}@${host.host})`;
-      activateTerminalForHost(host.id);
+      activateTerminalForHostTab(host.id, tabId);
       updateTabsForActiveHost(host);
       renderHosts();
+      updateStatus({ state: "reconnecting", attempts: 0 });
+
+      const size = await fitTerminalAndGetSize();
 
       const driver = host.driver || "ssh";
       const req = {
         type: "select",
         hostId: host.id,
-        cols: term.cols,
-        rows: term.rows,
+        tabId,
+        cols: size.cols,
+        rows: size.rows,
         // 🔑 send stored password immediately if available
         passwordB64:
           driver === "ssh" &&
@@ -1356,48 +1658,9 @@
             : "",
       };
 
-      try {
-        await rpc(req);
-        updateStatus({ state: "connected" });
-        return;
-      } catch (err) {
-        // 🔐 Host key trust (new or changed)
-        if (
-          err.error === "unknown_host_key" ||
-          err.error === "host_key_mismatch"
-        ) {
-          await showTrustDialogAsync(host.id, err.hostPort, err.fingerprint);
-          return await connectHost(host);
-        }
-
-        // 🔑 Password auth fallback ONLY if password missing
-        if (
-          err.error === "password_required" &&
-          driver === "ssh" &&
-          host.auth?.method === "password"
-        ) {
-          const pw = prompt(`Password for ${host.user}@${host.host}:`);
-          if (!pw) return;
-
-          try {
-            await rpc({
-              ...req,
-              passwordB64: b64enc(pw),
-            });
-
-            // Cache entered password in memory (optional but UX-friendly)
-            host.auth.password = pw;
-            saveConfig();
-
-            return;
-          } catch {
-            alert("Authentication failed.");
-            return;
-          }
-        }
-
-        alert(err.detail || err.error || "Connection failed");
-      }
+      rpc(req)
+        .then(() => scheduleStatePoll(150))
+        .catch((err) => alert(err.detail || err.error || "Connection failed"));
     } catch (e) {
       console.error("CONNECT ERROR", e);
       alert("Unexpected connection error.");
@@ -1405,17 +1668,15 @@
   }
 
   async function disconnectActiveHost() {
-    if (!activeHostId) return;
+    if (!activeHostId || !activeTermTabId) return;
     try {
-      await rpc({ type: "disconnect", hostId: activeHostId });
+      await rpc({ type: "disconnect", hostId: activeHostId, tabId: activeTermTabId });
       activeState = "disconnected";
       updateStatus({ state: "disconnected" });
-      const entry = hostTerms.get(activeHostId);
-      if (entry) {
-        entry.term.reset();
-        entry.fitAddon.fit();
-        entry.term.write("\r\n\x1b[31m[disconnected]\x1b[0m\r\n");
-      }
+      const { entry } = getTerminalEntry(activeHostId, activeTermTabId);
+      entry.term.reset();
+      entry.fitAddon.fit();
+      entry.term.write("\r\n\x1b[31m[disconnected]\x1b[0m\r\n");
 
       // Keep file UI state but force terminal tab (SFTP session is closed on backend).
       setActiveTab("terminal");
@@ -1702,19 +1963,19 @@
   }
 
   function resetTerminals() {
-    hostTerms.forEach((entry) => {
+    hostTerminals.forEach((state) => {
       try {
-        entry.term?.dispose?.();
-      } catch {
-        // ignore
-      }
-      try {
-        entry.pane?.remove?.();
-      } catch {
-        // ignore
-      }
+        state?.tabs?.forEach?.((entry) => {
+          try {
+            entry.term?.dispose?.();
+          } catch {}
+          try {
+            entry.pane?.remove?.();
+          } catch {}
+        });
+      } catch {}
     });
-    hostTerms.clear();
+    hostTerminals.clear();
 
     hostFiles.forEach((entry) => {
       try {
@@ -1727,10 +1988,11 @@
     hostTabs.clear();
 
     activeHostId = null;
+    activeTermTabId = null;
     activeState = "disconnected";
     activeHostHasSFTP = false;
     activeTab = "terminal";
-    activateTerminalForHost(null);
+    activateTerminalForHostTab(null, null);
     el("title").textContent = "Select a host";
     updateStatus(null);
     setActiveTab("terminal");
@@ -1741,10 +2003,12 @@
   function updateTerminalActions() {
     const hasTerm = !!term;
     const hasHost = !!activeHostId;
+    const hasTab = !!activeTermTabId;
     const isConnected = activeState === "connected";
     const isTerminalTab = activeTab === "terminal";
 
-    el("btn-disconnect").disabled = !hasHost;
+    el("btn-disconnect").disabled = !hasHost || !hasTab;
+    el("btn-new-term-tab").disabled = !hasHost || !isTerminalTab;
     el("btn-copy").disabled = !hasTerm || !isTerminalTab;
     el("btn-clear").disabled = !hasTerm || !isTerminalTab;
     el("btn-paste").disabled = !hasTerm || !isConnected || !isTerminalTab;
@@ -1770,9 +2034,10 @@
     sel.onchange = (e) => {
       activeNetworkId = Number(e.target.value) || null;
       activeHostId = null;
+      activeTermTabId = null;
       activeState = "disconnected";
       activeHostHasSFTP = false;
-      activateTerminalForHost(null);
+      activateTerminalForHostTab(null, null);
       setActiveTab("terminal");
       el("title").textContent = "Select a host";
       renderHosts();
@@ -1847,6 +2112,11 @@
     el("btn-paste").onclick = () => pasteFromClipboard().catch(() => {});
     el("btn-clear").onclick = () => term?.clear?.();
     el("btn-disconnect").onclick = () => disconnectActiveHost();
+    el("btn-new-term-tab").onclick = () => {
+      if (!activeHostId) return;
+      const host = findHostById(activeHostId);
+      if (host) addTerminalTab(host);
+    };
 
     el("term-search").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {

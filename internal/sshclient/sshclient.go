@@ -60,6 +60,7 @@ type NodeSession struct {
 
 	cancel context.CancelFunc
 	once   sync.Once
+	wg     sync.WaitGroup
 }
 
 // DialClient establishes an SSH connection and returns an ssh.Client without
@@ -116,7 +117,6 @@ func DialAndStart(
 	}()
 
 	addr := net.JoinHostPort(host.Host, fmt.Sprint(host.Port))
-	fmt.Println("SSH DIAL:", addr, "user:", host.User)
 
 	dialer := net.Dialer{Timeout: 8 * time.Second}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -127,12 +127,10 @@ func DialAndStart(
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
 		_ = conn.Close()
-		fmt.Println("SSH HANDSHAKE ERROR:", err)
 		return nil, err
 	}
 
 	client := ssh.NewClient(c, chans, reqs)
-	fmt.Println("SSH CONNECTED:", addr)
 
 	sess, err := client.NewSession()
 	if err != nil {
@@ -186,26 +184,25 @@ func DialAndStart(
 		stdin:  stdin,
 		stdout: stdout,
 		stderr: stderr,
-		output: make(chan []byte, 128),
+		output: make(chan []byte, 512),
 		done:   make(chan struct{}),
 		cancel: cancel,
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	ns.wg.Add(2)
 
 	go func() {
-		defer wg.Done()
+		defer ns.wg.Done()
 		ns.pump(ctx2, stdout)
 	}()
 	go func() {
-		defer wg.Done()
+		defer ns.wg.Done()
 		ns.pump(ctx2, stderr)
 	}()
 
 	// Close the session once both output streams are done (EOF / disconnect).
 	go func() {
-		wg.Wait()
+		ns.wg.Wait()
 		_ = ns.Close()
 	}()
 
@@ -219,19 +216,14 @@ Pump output
 func (s *NodeSession) pump(ctx context.Context, r io.Reader) {
 	buf := make([]byte, 8192)
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		n, err := r.Read(buf)
 		if n > 0 {
 			b := make([]byte, n)
 			copy(b, buf[:n])
 			select {
+			case <-ctx.Done():
+				return
 			case s.output <- b:
-			default:
 			}
 		}
 		if err != nil {
@@ -256,21 +248,25 @@ func (s *NodeSession) Resize(cols, rows int) error {
 }
 
 func (s *NodeSession) Close() error {
+	var ret error
 	s.once.Do(func() {
 		if s.cancel != nil {
 			s.cancel()
 		}
+
+		// Closing the session/client unblocks stdout/stderr reads.
+		if s.sess != nil {
+			_ = s.sess.Close()
+		}
+		if s.client != nil {
+			ret = s.client.Close()
+		}
+
 		close(s.done)
+		s.wg.Wait()
 		close(s.output)
 	})
-
-	if s.sess != nil {
-		_ = s.sess.Close()
-	}
-	if s.client != nil {
-		return s.client.Close()
-	}
-	return nil
+	return ret
 }
 
 /*

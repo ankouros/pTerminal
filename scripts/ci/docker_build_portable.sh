@@ -31,10 +31,6 @@ docker run --rm \
   -e GO_VERSION="${GO_VERSION}" \
   -e GOOS="${GOOS}" \
   -e GOARCH="${GOARCH}" \
-  -e SLES12_SCC_CREDENTIALS="${SLES12_SCC_CREDENTIALS:-}" \
-  -e SLES12_SCC_REGCODE="${SLES12_SCC_REGCODE:-}" \
-  -e SLES12_SCC_EMAIL="${SLES12_SCC_EMAIL:-}" \
-  -e SLES12_ADDITIONAL_PRODUCTS="${SLES12_ADDITIONAL_PRODUCTS:-}" \
   "${docker_extra_args[@]}" \
   "${IMAGE}" \
   bash -lc '
@@ -86,41 +82,6 @@ docker run --rm \
       return 1
     }
 
-    maybe_suseconnect_register() {
-      if ! command -v SUSEConnect >/dev/null 2>&1; then
-        echo "SUSEConnect not present; skipping registration" >&2
-        return 0
-      fi
-
-      if [[ -n "${SLES12_SCC_REGCODE:-}" ]]; then
-        echo "Registering SLES container via SUSEConnect regcode..."
-        if [[ -n "${SLES12_SCC_EMAIL:-}" ]]; then
-          SUSEConnect -r "${SLES12_SCC_REGCODE}" -e "${SLES12_SCC_EMAIL}" || true
-        else
-          SUSEConnect -r "${SLES12_SCC_REGCODE}" || true
-        fi
-      elif [[ -n "${SLES12_SCC_CREDENTIALS:-}" ]]; then
-        echo "Registering SLES container via SUSEConnect credentials file..."
-        umask 077
-        cred="/tmp/suseconnect.credentials"
-        printf "%s" "${SLES12_SCC_CREDENTIALS}" > "${cred}"
-        SUSEConnect --credentials "${cred}" || true
-        rm -f "${cred}" || true
-      else
-        echo "No SLES registration secrets provided; continuing without registration." >&2
-      fi
-
-      if [[ -n "${SLES12_ADDITIONAL_PRODUCTS:-}" ]]; then
-        echo "Adding SUSE products: ${SLES12_ADDITIONAL_PRODUCTS}"
-        IFS=',' read -ra prods <<< "${SLES12_ADDITIONAL_PRODUCTS}"
-        for p in "${prods[@]}"; do
-          p="$(echo "${p}" | xargs)"
-          [[ -z "${p}" ]] && continue
-          SUSEConnect -p "${p}" || true
-        done
-      fi
-    }
-
     case "${TARGET}" in
       ubuntu24)
         export DEBIAN_FRONTEND=noninteractive
@@ -128,23 +89,6 @@ docker run --rm \
         apt-get install -y --no-install-recommends \
           ca-certificates curl git make gcc g++ pkg-config xz-utils tar gzip \
           libgtk-3-dev libwebkit2gtk-4.1-dev
-        update-ca-certificates || true
-        ensure_webkit_pc_compat
-        ;;
-      sles15)
-        zypper -n refresh
-        zypper -n install -y \
-          ca-certificates ca-certificates-mozilla curl git make gcc gcc-c++ pkg-config tar gzip xz \
-          gtk3-devel webkit2gtk3-devel
-        update-ca-certificates || true
-        ensure_webkit_pc_compat
-        ;;
-      sles12)
-        maybe_suseconnect_register
-        zypper -n refresh
-        zypper -n install -y \
-          ca-certificates ca-certificates-mozilla curl git make gcc gcc-c++ pkg-config tar gzip xz \
-          gtk3-devel webkit2gtk3-devel
         update-ca-certificates || true
         ensure_webkit_pc_compat
         ;;
