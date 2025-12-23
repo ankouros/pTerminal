@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -180,6 +183,9 @@ func loadLocked() (model.AppConfig, error) {
 	if normalizeScopes(&cfg) {
 		changed = true
 	}
+	if dedupePersonalNetworks(&cfg) {
+		changed = true
+	}
 	if changed {
 		if err := saveLocked(cfg); err != nil {
 			return model.AppConfig{}, err
@@ -284,6 +290,116 @@ func normalizeScopes(cfg *model.AppConfig) bool {
 		}
 	}
 	return changed
+}
+
+func dedupePersonalNetworks(cfg *model.AppConfig) bool {
+	changed := false
+	seen := map[string]struct{}{}
+	keep := make([]model.Network, 0, len(cfg.Networks))
+
+	for _, netw := range cfg.Networks {
+		if netw.TeamID != "" || netw.Deleted {
+			keep = append(keep, netw)
+			continue
+		}
+		fp := networkFingerprint(netw)
+		if _, ok := seen[fp]; ok {
+			changed = true
+			continue
+		}
+		seen[fp] = struct{}{}
+		keep = append(keep, netw)
+	}
+
+	if changed {
+		cfg.Networks = keep
+	}
+	return changed
+}
+
+func networkFingerprint(netw model.Network) string {
+	hosts := make([]string, 0, len(netw.Hosts))
+	for _, h := range netw.Hosts {
+		if h.Deleted {
+			continue
+		}
+		hosts = append(hosts, hostFingerprint(h))
+	}
+	sort.Strings(hosts)
+
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(netw.Name))
+	b.WriteString("|")
+	for _, h := range hosts {
+		b.WriteString(h)
+		b.WriteString(";")
+	}
+	return b.String()
+}
+
+func hostFingerprint(h model.Host) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(h.Name))
+	b.WriteString("|")
+	b.WriteString(h.Host)
+	b.WriteString("|")
+	b.WriteString(strconv.Itoa(h.Port))
+	b.WriteString("|")
+	b.WriteString(h.User)
+	b.WriteString("|")
+	b.WriteString(string(h.Driver))
+	b.WriteString("|")
+	b.WriteString(string(h.Auth.Method))
+	b.WriteString("|")
+	b.WriteString(h.Auth.KeyPath)
+	b.WriteString("|")
+	b.WriteString(h.Auth.Password)
+	b.WriteString("|")
+	b.WriteString(string(h.HostKey.Mode))
+	b.WriteString("|")
+	if h.Telecom != nil {
+		b.WriteString(h.Telecom.Path)
+		b.WriteString("|")
+		b.WriteString(h.Telecom.Protocol)
+		b.WriteString("|")
+		b.WriteString(h.Telecom.Command)
+		b.WriteString("|")
+		if len(h.Telecom.Args) > 0 {
+			b.WriteString(strings.Join(h.Telecom.Args, ","))
+		}
+		b.WriteString("|")
+		b.WriteString(h.Telecom.WorkDir)
+		b.WriteString("|")
+		if len(h.Telecom.Env) > 0 {
+			keys := make([]string, 0, len(h.Telecom.Env))
+			for k := range h.Telecom.Env {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				b.WriteString(k)
+				b.WriteString("=")
+				b.WriteString(h.Telecom.Env[k])
+				b.WriteString(",")
+			}
+		}
+	}
+	b.WriteString("|")
+	if h.SFTP != nil {
+		b.WriteString("sftp:")
+		if h.SFTP.Enabled {
+			b.WriteString("1")
+		} else {
+			b.WriteString("0")
+		}
+		b.WriteString("|")
+		b.WriteString(string(h.SFTP.Credentials))
+		b.WriteString("|")
+		b.WriteString(h.SFTP.User)
+		b.WriteString("|")
+		b.WriteString(h.SFTP.Password)
+	}
+	return b.String()
 }
 
 func normalizeUIDs(cfg *model.AppConfig) bool {

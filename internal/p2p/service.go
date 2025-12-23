@@ -330,7 +330,7 @@ func (s *Service) syncPeer(peer peerState) {
 		Type:      "sync",
 		DeviceID:  s.deviceID,
 		User:      s.user,
-		Config:    cfg,
+		Config:    s.teamScopedConfig(cfg),
 		Teams:     s.teamSummariesFromConfig(cfg),
 		Manifests: manifests,
 	}
@@ -354,7 +354,7 @@ func (s *Service) applyRemote(remote wireMessage) {
 	}
 
 	local := s.configSnapshot()
-	merged, changed := MergeRemote(local, remote.Config)
+	merged, changed := MergeRemote(local, s.teamScopedConfig(remote.Config))
 	if !changed {
 		return
 	}
@@ -382,6 +382,13 @@ func (s *Service) syncFiles(enc *json.Encoder, dec *json.Decoder, local, remote 
 
 	wantCh := make(chan wantReq, 256)
 	fileDone := make(chan struct{})
+	var sendMu sync.Mutex
+	send := func(msg wireMessage) {
+		sendMu.Lock()
+		_ = enc.Encode(msg)
+		sendMu.Unlock()
+	}
+
 	go func() {
 		defer close(fileDone)
 		wantClosed := false
@@ -418,37 +425,42 @@ func (s *Service) syncFiles(enc *json.Encoder, dec *json.Decoder, local, remote 
 		l := localMap[teamID]
 		wants := computeWants(l, r)
 		for _, batch := range chunkPaths(wants, 200) {
-			_ = enc.Encode(wireMessage{
+			send(wireMessage{
 				Type:   "want",
 				TeamID: teamID,
 				Paths:  batch,
 			})
 		}
 	}
-	_ = enc.Encode(wireMessage{Type: "want_done"})
+	send(wireMessage{Type: "want_done"})
 
-	for req := range wantCh {
-		files := localFileMaps[req.teamID]
-		entry, ok := files[req.path]
-		if !ok || entry.Deleted {
-			continue
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		for req := range wantCh {
+			files := localFileMaps[req.teamID]
+			entry, ok := files[req.path]
+			if !ok || entry.Deleted {
+				continue
+			}
+			data, err := s.readTeamFile(req.teamID, req.path)
+			if err != nil {
+				continue
+			}
+			msg := wireMessage{
+				Type:    "file",
+				TeamID:  req.teamID,
+				Path:    req.path,
+				Hash:    entry.Hash,
+				ModTime: entry.ModTime,
+				DataB64: base64.StdEncoding.EncodeToString(data),
+			}
+			send(msg)
 		}
-		data, err := s.readTeamFile(req.teamID, req.path)
-		if err != nil {
-			continue
-		}
-		msg := wireMessage{
-			Type:    "file",
-			TeamID:  req.teamID,
-			Path:    req.path,
-			Hash:    entry.Hash,
-			ModTime: entry.ModTime,
-			DataB64: base64.StdEncoding.EncodeToString(data),
-		}
-		_ = enc.Encode(msg)
-	}
+	}()
 
-	_ = enc.Encode(wireMessage{Type: "file_done"})
+	<-serveDone
+	send(wireMessage{Type: "file_done"})
 	<-fileDone
 }
 
@@ -536,6 +548,42 @@ func (s *Service) buildManifests(cfg model.AppConfig) []teamrepo.Manifest {
 		manifests = append(manifests, manifest)
 	}
 	return manifests
+}
+
+func (s *Service) teamScopedConfig(cfg model.AppConfig) model.AppConfig {
+	out := cfg
+	out.Networks = nil
+	for _, netw := range cfg.Networks {
+		if netw.TeamID == "" || netw.Deleted {
+			continue
+		}
+		filtered := netw
+		filtered.Hosts = nil
+		for _, host := range netw.Hosts {
+			if host.Deleted {
+				continue
+			}
+			if host.Scope == model.ScopeTeam && host.TeamID == netw.TeamID {
+				filtered.Hosts = append(filtered.Hosts, host)
+			}
+		}
+		if len(filtered.Hosts) == 0 {
+			continue
+		}
+		out.Networks = append(out.Networks, filtered)
+	}
+
+	out.Scripts = nil
+	for _, script := range cfg.Scripts {
+		if script.Deleted {
+			continue
+		}
+		if script.Scope == model.ScopeTeam && script.TeamID != "" {
+			out.Scripts = append(out.Scripts, script)
+		}
+	}
+
+	return out
 }
 
 func (s *Service) readTeamFile(teamID, relPath string) ([]byte, error) {
@@ -727,7 +775,7 @@ func (s *Service) handleConn(conn net.Conn) {
 		Type:      "sync",
 		DeviceID:  s.deviceID,
 		User:      s.user,
-		Config:    cfg,
+		Config:    s.teamScopedConfig(cfg),
 		Teams:     s.teamSummariesFromConfig(cfg),
 		Manifests: manifests,
 	}

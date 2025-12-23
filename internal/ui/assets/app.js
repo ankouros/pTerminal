@@ -68,6 +68,7 @@
   let teamRepoPaths = {};
   let teamsModalOpen = false;
   let activeTeamDetailId = null;
+  let profileDirty = false;
 
   const hostTerminals = new Map(); // hostId -> { tabs, tabOrder, tabNames, activeTabId, nextTabId, lastState }
   let activePane = null;
@@ -2312,6 +2313,7 @@
 
   function closeTeamsModal() {
     teamsModalOpen = false;
+    profileDirty = false;
     el("teams-modal").classList.add("hidden");
     if (teamsPresenceTimer) {
       clearInterval(teamsPresenceTimer);
@@ -2343,6 +2345,7 @@
   function isMemberActive(email) {
     const norm = normalizeEmail(email);
     if (!norm) return false;
+    if (norm === userEmail()) return true;
     const now = Date.now() / 1000;
     return (teamPresence.peers || []).some(
       (p) => normalizeEmail(p.email) === norm && now - (p.lastSeen || 0) < 20
@@ -2351,8 +2354,10 @@
 
   function renderTeamsModal() {
     if (!teamsModalOpen) return;
-    el("profile-name").value = config?.user?.name || "";
-    el("profile-email").value = config?.user?.email || "";
+    if (!profileDirty) {
+      el("profile-name").value = config?.user?.name || "";
+      el("profile-email").value = config?.user?.email || "";
+    }
 
     renderTeamsList();
     renderTeamDetail();
@@ -2437,8 +2442,15 @@
     config.user = config.user || {};
     config.user.name = el("profile-name").value.trim();
     config.user.email = el("profile-email").value.trim();
+    profileDirty = false;
     saveConfig();
   };
+
+  ["profile-name", "profile-email"].forEach((id) =>
+    el(id)?.addEventListener("input", () => {
+      profileDirty = true;
+    })
+  );
 
   el("btn-team-create").onclick = () => {
     const name = prompt("Team name?");

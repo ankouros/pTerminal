@@ -143,7 +143,8 @@ Minimal example:
 - `make release` / `make portable` / `make flatpak` – produce distributable bundles
 
 Before sending patches, run `make fmt` and `make vet` (mirrors CI). For UI/asset edits, ensure the `go:embed` lists in `internal/ui/assets` stay in sync.
-
+ankouros30@gmail.com
+AggelosG
 ## LAN smoke test
 
 Quick checklist for two instances on the same LAN:
