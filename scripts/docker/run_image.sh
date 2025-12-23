@@ -15,6 +15,7 @@ fi
 hostfs_prefix=""
 if docker info 2>/dev/null | grep -q "Docker Root Dir: /var/snap/docker/"; then
   hostfs_prefix="/var/lib/snapd/hostfs"
+  echo "Detected Docker snap; using host filesystem prefix: ${hostfs_prefix}" >&2
 fi
 
 host_path() {
@@ -53,13 +54,19 @@ docker_args=(
   --rm
   --shm-size=512m
   --user "$(id -u):$(id -g)"
-  --volume "${cfg_dir}:/home/pterminal/.config/pterminal"
-  --volume "${dl_dir}:/home/pterminal/Downloads"
+  --volume "$(host_path "${cfg_dir}"):/home/pterminal/.config/pterminal"
+  --volume "$(host_path "${dl_dir}"):/home/pterminal/Downloads"
   --env HOME=/home/pterminal
   --env XDG_CONFIG_HOME=/home/pterminal/.config
   --env XDG_DOWNLOAD_DIR=/home/pterminal/Downloads
   --env NO_AT_BRIDGE=1
 )
+
+# Preserve host group memberships inside the container so device permissions
+# (e.g. /dev/dri render/video) keep working when running as a non-root user.
+for gid in $(id -G); do
+  docker_args+=(--group-add "${gid}")
+done
 
 if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "${XDG_RUNTIME_DIR}" ]]; then
   docker_args+=(

@@ -55,3 +55,26 @@ pTerminal is a Linux GUI application written in Go that provides persistent mult
 - `make release` – build optimized bundle into `release/`
 - `make fmt` – `gofmt`
 - `make vet` – `go vet`
+
+## Coding & review guidelines
+
+- Keep Go files gofmt-clean and favor small, composable packages so WebView/UI glue stays thin.
+- Prefer passing `context.Context` through SSH/session layers so reconnect/teardown logic can cancel goroutines quickly.
+- Guard RPC handlers: validate payloads, never trust the UI blindly, and log concise error context using the existing logger.
+- Asset changes go through `internal/ui/assets`; keep embedded `go:embed` lists in sync and avoid loading files from disk dynamically.
+- When touching WebView JS, remember it is bundled at build time; no runtime CDN access is allowed.
+
+## Testing & validation checklist
+
+- Always run `make fmt` and `make vet` before sending patches; CI mirrors these checks.
+- Use `go test ./...` for targeted unit coverage where packages already define tests (session/config/sftp).
+- `make run` exercises the full stack; keep an SSH test host handy to verify PTY + SFTP happy-path and disconnect/reconnect flows.
+- When touching release bits (packaging, Flatpak manifest, etc.) run `make release` once to confirm assets embed correctly.
+
+## Frequent pitfalls
+
+- Long RPC handlers will freeze the WebView. Offload SSH/SFTP work onto goroutines and respond via channels.
+- Never write raw PTY bytes onto the bridge; base64 encode/decode at the API boundary.
+- Ensure `hostId` remains unique even when importing configs—reject duplicates early in `internal/config`.
+- Disconnect actions must flip the session into a "manual reconnect" state; stop timers/watchers as part of the same update.
+- SFTP tab state is per-host. Changes to list/search panes should round-trip that state through `internal/session` instead of global variables.

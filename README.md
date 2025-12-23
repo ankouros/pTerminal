@@ -1,78 +1,72 @@
 # pTerminal (Go)
 
-A lightweight Linux GUI app providing **persistent multi-node SSH terminal sessions** with a modern HTML/JS UI rendered via WebView.
+Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written entirely in Go.
 
-## Status
+## Contents
 
-- ✅ WebView window using `github.com/webview/webview_go` with inlined HTML/CSS/JS via `go:embed`
-- ✅ Embedded **xterm.js** terminal with binary-safe streaming between Go and JS (base64 PTY)
-- ✅ Native Go SSH sessions using `golang.org/x/crypto/ssh`, one persistent session per host + auto-reconnect
-- ✅ Optional driver (PTY local process) for hosts that require it
-- ✅ SFTP support (per-host enable + credential mode) with a **tabbed Files view**
-- ✅ SFTP Files view: search, context menu actions, drag & drop upload, download to `~/Downloads`, in-place edit/save
-- ✅ JSON configuration (`~/.config/pterminal/pterminal.json`) editable from the UI + Import/Export
-- ✅ SSH host key verification + trust UX for unknown/mismatched keys
-- ⚙️ Planned: SSH key + agent flows in UI, richer SFTP (recursive delete, permissions, etc.)
+- [Features](#features)
+- [Architecture & constraints](#architecture--constraints)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Terminal & Files tabs](#terminal--files-tabs)
+- [Authentication & host keys](#authentication--host-keys)
+- [Import / export](#import--export)
+- [Releases & distribution](#releases--distribution)
+- [Development workflow](#development-workflow)
+- [Troubleshooting & tips](#troubleshooting--tips)
 
-## Goals & Constraints
+## Features
 
-- Go + WebView UI (our UI is not built with GTK/Qt/Electron/Node/Python; on Linux `webview_go` uses **WebKitGTK/GTK** under the hood, which we ship via Flatpak and/or bundle best-effort for portable builds)
-- Terminal emulator: **xterm.js** (assets shipped and embedded into the binary)
-- SSH: `golang.org/x/crypto/ssh` (no external `ssh` binary)
-- Single self-contained binary (HTML/CSS/JS embedded via `go:embed`)
-- One persistent SSH session per host; switching hosts does not reconnect
+- Modern HTML/CSS/JS UI rendered inside `github.com/webview/webview_go` with assets embedded via `go:embed`.
+- Embedded **xterm.js** terminal per host with binary-safe base64 streaming between Go and JS.
+- Persistent **native Go SSH** sessions (`golang.org/x/crypto/ssh`) with reconnect logic; no external `ssh` binary.
+- Optional IOshell driver (local PTY) for telecom hosts that demand it, still rendered in xterm.js.
+- Built-in **SFTP file manager** (Files tab) with search, context menu, drag & drop upload, download to `~/Downloads`, and inline edit/save.
+- JSON config stored in `~/.config/pterminal/pterminal.json`, editable via UI or text editor; import/export helpers included.
+- Host key verification UX (unknown/mismatched dialog, trust storage) and per-host auth method selection.
+- Ships as a single binary with embedded assets plus Flatpak/portable bundles when needed; no external GUI frameworks required.
 
-## Getting started
+## Architecture & constraints
 
-### 0) Prereqs (Linux)
+- Go backend orchestrates SSH, sessions, config, and RPC bridge; UI lives entirely inside WebView.
+- Linux WebView runtime is **WebKitGTK/GTK** (bundled via Flatpak/portable release when system copy is unavailable).
+- Terminal emulator: **xterm.js** only (no native terminals, tmux, or X11 `-into` tricks).
+- SSH implementation: `golang.org/x/crypto/ssh` with custom session persistence; PTY data is base64 encoded both ways.
+- SFTP backend is native Go + UI tab (no external `sftp` process).
+- Node/npm usage is limited to `make assets` (fetching xterm vendor files under `internal/ui/assets/vendor/`).
+
+## Quick start
+
+### 0. Prerequisites (Linux)
 
 - Go 1.22+
-- System libraries required by `webview_go` (WebKitGTK) and the native file picker (GTK3).
-  - Package names vary by distro (example on Debian/Ubuntu: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `pkg-config`).
+- System packages for `webview_go` / WebKitGTK + GTK3 (example on Debian/Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev pkg-config`).
+- Optional: `node` + `npm` when refreshing xterm.js assets.
 
-### 1) Fetch/update frontend vendor assets (xterm.js)
-
-Xterm assets live under `internal/ui/assets/vendor/` and are embedded into the Go binary. To update them, you need `node` + `npm`:
+### 1. Fetch/update frontend vendor assets
 
 ```bash
 make assets
 ```
 
-This downloads `xterm.js`, `xterm.css`, and the required addons into `internal/ui/assets/vendor/`.
+Downloads `xterm.js`, CSS, and addons into `internal/ui/assets/vendor/` where they are embedded.
 
-### 2) Build & run
+### 2. Build & run
 
 ```bash
 make build
 ./bin/pterminal
-```
-
-If your distro uses an environment *module system* that ships Go with a **read-only** default module/cache path (common on SLES enterprise setups), our Makefile always forces writable caches under:
-
-- `$XDG_CACHE_HOME/pterminal` (if set), otherwise `$HOME/.cache/pterminal`
-
-No user exports are needed; just run the Makefile targets.
-
-On some enterprise module environments, `pkg-config` metadata can be incomplete (example: `freetype2.pc` may `Require: bzip2` or `fontconfig.pc` may `Require: uuid` but the corresponding `.pc` file is missing). The Makefile automatically creates minimal fallback `.pc` files under the same cache directory and prepends them to `PKG_CONFIG_PATH` for builds.
-
-Or, during development:
-
-```bash
+# or
 make run
 ```
 
-### 3) Configuration
+The Makefile automatically redirects Go module/cache paths to `$XDG_CACHE_HOME/pterminal` (or `$HOME/.cache/pterminal`) so enterprise module systems with read-only defaults still work. Missing `pkg-config` `.pc` files are shimmed in the same cache if your distro leaves gaps (common on SLES).
 
-On first start, pTerminal will create a default configuration at:
+### 3. Configuration
 
-- `~/.config/pterminal/pterminal.json`
+On first launch a config file is created at `~/.config/pterminal/pterminal.json`. Use the UI editors or edit the JSON manually, then reload via the UI.
 
-The file contains a list of **networks** and **hosts**. You can edit it either:
-
-- Directly in the file (JSON), or
-- Via the in-app “Add network” / “Add host” editor, which calls the `config_get` / `config_save` RPCs.
-
-A minimal example:
+Minimal example:
 
 ```json
 {
@@ -106,59 +100,55 @@ A minimal example:
 }
 ```
 
-### 4) Terminal + Files tabs
+## Terminal & Files tabs
 
-- Hosts with SFTP enabled show `Terminal` / `Files` tabs.
-- The Files tab provides a lightweight SFTP file manager:
-  - Search within current directory
-  - Right-click context menu (file/folder aware)
-  - Drag & drop upload into the file list
-  - Download selected file to `~/Downloads`
-  - In-place edit/save for text files (Ctrl+S)
+- Hosts with `sftp.enabled` show `Terminal` and `Files` tabs; other hosts show only Terminal.
+- Files tab behaves like a lightweight two-pane manager:
+  - Search within the current directory
+  - Right-click context menu with file/folder-aware actions
+  - Drag & drop upload into the listing
+  - Download the selection to `~/Downloads`
+  - Inline text editor with Ctrl+S save
+- Per-host tab state (cwd, search, selection) persists while the app runs so switching hosts does not reset your view.
 
-### 4) Authentication & host keys
+## Authentication & host keys
 
-- **Auth methods** (model-level):
-  - `password`
-  - `key` (wired in config model, UI wiring planned)
-  - `agent` (wired in config model and ssh client)
-- **Host key modes**:
-  - `known_hosts` – strict checking against `~/.ssh/known_hosts`
-  - `insecure` – skip host key verification (for prototyping only)
+- Auth methods defined in config: `password`, `key`, `agent` (UI wiring for key/agent is in progress but backend support exists).
+- Host key modes: `known_hosts` (strict check) or `insecure` (development/testing only).
+- Unknown/changed host keys trigger a dialog in the UI; trusted keys are persisted via the Go backend.
 
-The UI exposes a confirmation dialog for unknown / changed host keys and can persist a trusted key via the Go backend.
+## Import / export
 
-## Import / Export
+- **Export** writes a timestamped config JSON into `~/Downloads`.
+- **Import** lets you choose a JSON file and replaces the current config:
+  - A backup of the previous file is written to `~/.config/pterminal/`.
+  - Active sessions disconnect because host IDs may change during normalization.
 
-- Export writes a timestamped config JSON into `~/Downloads`.
-- Import lets you pick a JSON file and overwrites the active config:
-  - A backup of the previous config is created in `~/.config/pterminal/`
-  - All existing sessions are disconnected (host IDs may change during normalization)
+## Releases & distribution
 
-## Releases (no root)
+- `make release` builds an optimized bundle into `release/` (binary, desktop file, icon, helper scripts, dependency probe).
+- `make portable` assembles a larger `release/portable/` folder with best-effort bundled shared libs + `LD_LIBRARY_PATH` launcher (Linux-only).
+- Flatpak: `make flatpak` uses `flatpak-builder` (see `.github/workflows/flatpak.yml`).
+- Portable tarballs for GitHub Releases are generated via `.github/workflows/release-portable.yml` (Ubuntu 24.04 base).
+- Docker image: use `scripts/docker/` helpers, running with host X11/Wayland for GUI display.
 
-Because pTerminal uses WebView (WebKitGTK) + GTK3, a plain Linux binary may require system runtime libraries.
+## Development workflow
 
-- `make release` produces a small bundle and a dependency checker.
-- `make portable` produces a larger `portable/` folder that tries to bundle shared libs next to the executable and run with `LD_LIBRARY_PATH` (best-effort, Linux-only).
-- GitHub Releases: see `.github/workflows/release-portable.yml` for portable tarballs built for Ubuntu 24.04.
-- Flatpak (recommended for “out-of-the-box” Linux): `make flatpak` and `.github/workflows/flatpak.yml`.
-- Docker image (GUI via host X11/Wayland): build/push with `scripts/docker/` and run with `scripts/docker/run_image.sh`.
+- `make assets` – refresh xterm.js + addons in `internal/ui/assets/vendor/`
+- `make build` – compile to `bin/pterminal`
+- `make run` – build and run
+- `make fmt` / `make vet` – gofmt + `go vet`
+- `go test ./...` – run package tests (config/session/sftp have coverage)
+- `make release` / `make portable` / `make flatpak` – produce distributable bundles
 
-## Development
+Before sending patches, run `make fmt` and `make vet` (mirrors CI). For UI/asset edits, ensure the `go:embed` lists in `internal/ui/assets` stay in sync.
 
-- `make assets` – fetch/update xterm.js assets into `internal/ui/assets/vendor/`
-- `make build` – build the `pterminal` binary into `bin/`
-- `make run` – build and run the app
-- `make release` – build an optimized binary bundle into `release/` (includes `.desktop` + icon + helper scripts)
-- `make portable` – build a best-effort “portable folder” into `release/` (bundled shared libs next to the executable)
-- `make flatpak` – build `dist/pterminal.flatpak` using `flatpak-builder` (Linux)
-- `make fmt` – format Go code
-- `make vet` – run `go vet`
+## Troubleshooting & tips
 
-The hard constraints for this project are:
+- **WebView fails to start**: verify WebKitGTK/GTK3 dev packages are installed; Flatpak build is the quickest way to get a known-good runtime.
+- **xterm assets missing**: rerun `make assets` (requires npm) so `internal/ui/assets/vendor/` is repopulated before `make build`.
+- **Config import duplicates**: host IDs must remain globally unique; duplicate IDs are rejected early. Use the UI import dialog so normalization handles re-numbering.
+- **Frozen UI**: long-running SSH/SFTP actions must run outside the UI thread. Check `internal/ui` RPC handlers for blocking calls.
+- **Readonly Go module cache**: rely on the Makefile-provided cache path rather than overriding env vars manually.
 
-- No embedding or shelling out to native terminals
-- No X11 `-into` embedding tricks
-- No dependency on GUI frameworks as a *system-installed requirement* (Flatpak/portable releases may bundle WebKitGTK/GTK runtime)
-- No tmux dependency (optional integration later)
+Questions or bugs? Open an issue with repro steps, SSH/SFTP expectations, and distro/runtime details so we can help quickly.
