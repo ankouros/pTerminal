@@ -214,6 +214,7 @@
             <div class="form-group">
               <label>Name</label>
               <input id="team-name" type="text" />
+              <div id="team-name-display" class="team-name-display hidden"></div>
             </div>
             <div class="form-group">
               <label>Team ID</label>
@@ -344,6 +345,11 @@
           <div class="form-group hidden" data-scope="network" id="net-team-row">
             <label>Team</label>
             <select id="net-team"></select>
+          </div>
+          <div class="form-group hidden" data-scope="network" id="net-copy-row">
+            <label>Copy to teams (admin)</label>
+            <div id="net-copy-teams" class="checkbox-list"></div>
+            <div class="help">Creates a copy of this network and all hosts in selected teams.</div>
           </div>
 
           <!-- Host fields -->

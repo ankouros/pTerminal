@@ -713,7 +713,14 @@ func normalizeMembers(members []model.TeamMember) []model.TeamMember {
 	for _, m := range members {
 		email := strings.ToLower(strings.TrimSpace(m.Email))
 		name := strings.TrimSpace(m.Name)
-		out = append(out, model.TeamMember{Email: email, Name: name})
+		role := strings.TrimSpace(m.Role)
+		if role == "" {
+			role = model.TeamRoleUser
+		}
+		if role != model.TeamRoleAdmin && role != model.TeamRoleUser {
+			role = model.TeamRoleUser
+		}
+		out = append(out, model.TeamMember{Email: email, Name: name, Role: role})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Email == out[j].Email {
@@ -736,9 +743,13 @@ func mergeTeamMembers(a, b model.Team) []model.TeamMember {
 			continue
 		}
 		if existing, ok := byEmail[m.Email]; ok {
-			if existing.Name == "" && m.Name != "" {
-				byEmail[m.Email] = m
+			if existing.Role != model.TeamRoleAdmin && m.Role == model.TeamRoleAdmin {
+				existing.Role = model.TeamRoleAdmin
 			}
+			if existing.Name == "" && m.Name != "" {
+				existing.Name = m.Name
+			}
+			byEmail[m.Email] = existing
 			continue
 		}
 		byEmail[m.Email] = m

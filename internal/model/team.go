@@ -7,6 +7,11 @@ const (
 	ScopeTeam    Scope = "team"
 )
 
+const (
+	TeamRoleAdmin = "admin"
+	TeamRoleUser  = "user"
+)
+
 type UserProfile struct {
 	Email    string `json:"email,omitempty"`
 	Name     string `json:"name,omitempty"`
@@ -16,6 +21,7 @@ type UserProfile struct {
 type TeamMember struct {
 	Email string `json:"email,omitempty"`
 	Name  string `json:"name,omitempty"`
+	Role  string `json:"role,omitempty"`
 }
 
 type Team struct {

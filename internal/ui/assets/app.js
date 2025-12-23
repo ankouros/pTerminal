@@ -107,6 +107,19 @@
     return (team?.members || []).some((m) => normalizeEmail(m.email) === email);
   }
 
+  function teamRole(team, email) {
+    const norm = normalizeEmail(email);
+    if (!norm) return "";
+    const member = (team?.members || []).find(
+      (m) => normalizeEmail(m.email) === norm
+    );
+    return member?.role || "";
+  }
+
+  function isTeamAdmin(team) {
+    return teamRole(team, userEmail()) === "admin";
+  }
+
   function visibleTeams() {
     return (config?.teams || []).filter((t) => !t.deleted && isUserInTeam(t));
   }
@@ -1871,6 +1884,7 @@
   let scriptEditorMode = null;
   let scriptEditorTarget = null;
   let pendingTeamName = null;
+  let networkCopyTargets = new Set();
 
   function fillTeamSelect(select, selectedId, includeEmpty) {
     if (!select) return;
@@ -1897,6 +1911,88 @@
     select.value = selectedId || "";
   }
 
+  function renderNetworkCopyTeams(target) {
+    const row = el("net-copy-row");
+    const list = el("net-copy-teams");
+    if (!row || !list) return;
+
+    networkCopyTargets = new Set();
+    list.innerHTML = "";
+
+    if (editorType !== "network" || editorMode !== "edit" || !target) {
+      row.classList.add("hidden");
+      return;
+    }
+
+    const teams = (config?.teams || []).filter(
+      (t) => !t.deleted && isTeamAdmin(t)
+    );
+
+    if (!teams.length) {
+      row.classList.add("hidden");
+      return;
+    }
+
+    row.classList.remove("hidden");
+
+    teams.forEach((team) => {
+      const label = document.createElement("label");
+      label.className = "checkbox";
+
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = team.id;
+      input.addEventListener("change", () => {
+        if (input.checked) {
+          networkCopyTargets.add(team.id);
+        } else {
+          networkCopyTargets.delete(team.id);
+        }
+      });
+
+      const text = document.createElement("span");
+      text.textContent = team.name || "Untitled Team";
+
+      label.appendChild(input);
+      label.appendChild(text);
+      list.appendChild(label);
+    });
+  }
+
+  function normalizeHostSFTP(host) {
+    if (!host) return;
+
+    const legacyEnabled = !!host.sftpEnabled;
+    if (!host.sftp) {
+      if (legacyEnabled) {
+        host.sftp = {
+          enabled: true,
+          credentials: "connection",
+          user: "",
+          password: "",
+        };
+      }
+      return;
+    }
+
+    if (host.sftp.enabled === false) {
+      host.sftp = undefined;
+      host.sftpEnabled = false;
+      return;
+    }
+
+    host.sftp.enabled = true;
+    const hasCustom = !!(host.sftp.user || host.sftp.password);
+    if (host.sftp.credentials !== "custom" && host.sftp.credentials !== "connection") {
+      host.sftp.credentials = hasCustom ? "custom" : "connection";
+    }
+    if (host.sftp.credentials === "connection") {
+      host.sftp.user = "";
+      host.sftp.password = "";
+    }
+    host.sftpEnabled = true;
+  }
+
   function openEditor(type, mode, target = null) {
     editorType = type;
     editorMode = mode;
@@ -1920,6 +2016,7 @@
       el("net-scope").value = netScope;
       fillTeamSelect(el("net-team"), teamId, true);
       applyNetworkScopeVisibility();
+      renderNetworkCopyTeams(target);
       validateEditor();
       el("editor-modal").classList.remove("hidden");
       return;
@@ -1952,6 +2049,8 @@
 
     // Password field (ssh + telecom)
     el("host-password").value = auth.password || "";
+
+    normalizeHostSFTP(target);
 
     // ---- SFTP ----
     const sftpEnabled = !!(target?.sftp?.enabled || target?.sftpEnabled);
@@ -2016,6 +2115,7 @@
   });
 
   function applySFTPVisibility() {
+    if (editorType !== "host") return;
     const enabled = !!el("sftp-enabled")?.checked;
     el("sftp-cred-group")?.classList.toggle("hidden", !enabled);
 
@@ -2027,6 +2127,7 @@
   function closeEditor() {
     el("editor-modal").classList.add("hidden");
     editorMode = editorType = editorTarget = null;
+    networkCopyTargets = new Set();
   }
 
   function validateEditor() {
@@ -2103,6 +2204,45 @@
       } else {
         editorTarget.name = el("net-name").value.trim();
         editorTarget.teamId = netTeam;
+        if (networkCopyTargets.size) {
+          const source = editorTarget;
+          const teams = Array.from(networkCopyTargets).filter((teamId) => {
+            const team = getTeamById(teamId);
+            return team && isTeamAdmin(team);
+          });
+
+          teams.forEach((teamId) => {
+            const clone = {
+              id: nextNetworkId(),
+              name: source.name,
+              teamId,
+              uid: "",
+              hosts: [],
+              updatedAt: 0,
+              updatedBy: "",
+              version: null,
+              conflict: false,
+              deleted: false,
+            };
+            config.networks.push(clone);
+
+            (source.hosts || [])
+              .filter((h) => !h.deleted)
+              .forEach((h) => {
+                const hostClone = JSON.parse(JSON.stringify(h));
+                hostClone.id = nextHostId();
+                hostClone.uid = "";
+                hostClone.scope = "team";
+                hostClone.teamId = teamId;
+                hostClone.updatedAt = 0;
+                hostClone.updatedBy = "";
+                hostClone.version = null;
+                hostClone.conflict = false;
+                hostClone.deleted = false;
+                clone.hosts.push(hostClone);
+              });
+          });
+        }
       }
     }
 
@@ -2373,8 +2513,12 @@
         if (team.id === activeTeamDetailId) div.classList.add("active");
 
         const activeCount = (team.members || []).filter((m) => isMemberActive(m.email)).length;
+        const badge = isTeamAdmin(team) ? '<span class="team-badge">admin</span>' : "";
         div.innerHTML = `
-          <div>${esc(team.name || "Untitled Team")}</div>
+          <div class="team-row">
+            <span>${esc(team.name || "Untitled Team")}</span>
+            ${badge}
+          </div>
           <div class="team-member-status">${activeCount} active</div>
         `;
 
@@ -2390,10 +2534,17 @@
 
   function renderTeamDetail() {
     const team = getTeamById(activeTeamDetailId || "");
+    const isAdmin = !!team && isTeamAdmin(team);
     el("team-name").value = team?.name || "";
+    el("team-name-display").textContent = team?.name || "";
     el("team-id").textContent = team?.id || "";
     const repoPath = (team?.id && teamRepoPaths[team.id]) || "";
     el("team-repo-path").textContent = repoPath || "Not available";
+
+    el("team-name").disabled = !isAdmin;
+    el("team-name").readOnly = !isAdmin;
+    el("team-name").classList.toggle("hidden", !isAdmin);
+    el("team-name-display").classList.toggle("hidden", isAdmin);
 
     const members = el("team-members");
     members.innerHTML = "";
@@ -2401,17 +2552,66 @@
       const row = document.createElement("div");
       row.className = "team-member-row";
       const status = isMemberActive(member.email) ? "active" : "offline";
-      row.innerHTML = `
-        <div>
-          ${esc(member.name || member.email || "Unknown")}
-          <div class="team-member-status ${status}">${status}</div>
-        </div>
+      const info = document.createElement("div");
+      info.innerHTML = `
+        <div>${esc(member.name || member.email || "Unknown")}</div>
+        <div class="team-member-status ${status}">${status}</div>
       `;
+      row.appendChild(info);
+
+      const roleWrap = document.createElement("div");
+      if (isAdmin) {
+        const select = document.createElement("select");
+        select.className = "btn small secondary";
+        const optAdmin = document.createElement("option");
+        optAdmin.value = "admin";
+        optAdmin.textContent = "admin";
+        const optUser = document.createElement("option");
+        optUser.value = "user";
+        optUser.textContent = "user";
+        select.appendChild(optAdmin);
+        select.appendChild(optUser);
+        select.value = member.role || "user";
+        select.onchange = () => {
+          if (!team) return;
+          if (select.value !== "admin") {
+            const adminCount = (team.members || []).filter(
+              (m) => m.role === "admin"
+            ).length;
+            if (adminCount <= 1 && member.role === "admin") {
+              alert("Each team must have at least one admin.");
+              select.value = "admin";
+              return;
+            }
+          }
+          member.role = select.value;
+          saveConfig();
+        };
+        roleWrap.appendChild(select);
+      } else {
+        const label = document.createElement("div");
+        label.className = "team-member-status";
+        label.textContent = member.role || "user";
+        roleWrap.appendChild(label);
+      }
+      row.appendChild(roleWrap);
+
       const remove = document.createElement("button");
       remove.className = "btn small secondary";
       remove.textContent = "Remove";
+      remove.disabled = !isAdmin;
+      remove.classList.toggle("hidden", !isAdmin);
       remove.onclick = () => {
-        if (!team) return;
+        if (!team || !isAdmin) return;
+        if (member.role === "admin") {
+          const adminCount = (team.members || []).filter(
+            (m) => m.role === "admin"
+          ).length;
+          if (adminCount <= 1) {
+            alert("Each team must have at least one admin.");
+            return;
+          }
+        }
         team.members = (team.members || []).filter(
           (m) => normalizeEmail(m.email) !== normalizeEmail(member.email)
         );
@@ -2421,9 +2621,14 @@
       members.appendChild(row);
     });
 
-    el("team-save").disabled = !team;
-    el("team-delete").disabled = !team;
-    el("team-add-member").disabled = !team;
+    const addMemberRow = el("team-add-member")?.closest(".team-add-member");
+    if (addMemberRow) addMemberRow.classList.toggle("hidden", !isAdmin);
+
+    el("team-save").disabled = !team || !isAdmin;
+    el("team-delete").disabled = !team || !isAdmin;
+    el("team-add-member").disabled = !team || !isAdmin;
+    el("team-save").classList.toggle("hidden", !isAdmin);
+    el("team-delete").classList.toggle("hidden", !isAdmin);
     el("team-copy-path").disabled = !repoPath;
   }
 
@@ -2451,12 +2656,16 @@
   );
 
   el("btn-team-create").onclick = () => {
+    if (!userEmail()) {
+      alert("Set your profile email before creating a team.");
+      return;
+    }
     const name = prompt("Team name?");
     if (!name) return;
     const members = [];
     const email = userEmail();
     if (email) {
-      members.push({ email, name: config?.user?.name || "" });
+      members.push({ email, name: config?.user?.name || "", role: "admin" });
     }
     config.teams = config.teams || [];
     config.teams.push({ id: "", name: name.trim(), members });
@@ -2466,14 +2675,14 @@
 
   el("team-save").onclick = () => {
     const team = getTeamById(activeTeamDetailId || "");
-    if (!team) return;
+    if (!team || !isTeamAdmin(team)) return;
     team.name = el("team-name").value.trim();
     saveConfig();
   };
 
   el("team-delete").onclick = () => {
     const team = getTeamById(activeTeamDetailId || "");
-    if (!team) return;
+    if (!team || !isTeamAdmin(team)) return;
     if (!confirm(`Delete team "${team.name}"?`)) return;
     team.deleted = true;
     activeTeamDetailId = null;
@@ -2482,7 +2691,7 @@
 
   el("team-add-member").onclick = () => {
     const team = getTeamById(activeTeamDetailId || "");
-    if (!team) return;
+    if (!team || !isTeamAdmin(team)) return;
     const name = el("team-member-name").value.trim();
     const email = el("team-member-email").value.trim();
     if (!email) return;
@@ -2490,7 +2699,7 @@
       return;
     }
     team.members = team.members || [];
-    team.members.push({ name, email });
+    team.members.push({ name, email, role: "user" });
     el("team-member-name").value = "";
     el("team-member-email").value = "";
     saveConfig();

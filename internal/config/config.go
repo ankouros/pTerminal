@@ -177,6 +177,9 @@ func loadLocked() (model.AppConfig, error) {
 	if normalizeTeams(&cfg) {
 		changed = true
 	}
+	if normalizeTeamMembers(&cfg) {
+		changed = true
+	}
 	if normalizeUIDs(&cfg) {
 		changed = true
 	}
@@ -240,6 +243,35 @@ func normalizeTeams(cfg *model.AppConfig) bool {
 			changed = true
 		}
 		seen[t.ID] = struct{}{}
+	}
+	return changed
+}
+
+func normalizeTeamMembers(cfg *model.AppConfig) bool {
+	changed := false
+	for i := range cfg.Teams {
+		t := &cfg.Teams[i]
+		hasAdmin := false
+		for mi := range t.Members {
+			m := &t.Members[mi]
+			role := strings.TrimSpace(m.Role)
+			if role == "" {
+				role = model.TeamRoleUser
+				changed = true
+			}
+			if role != model.TeamRoleAdmin && role != model.TeamRoleUser {
+				role = model.TeamRoleUser
+				changed = true
+			}
+			m.Role = role
+			if role == model.TeamRoleAdmin {
+				hasAdmin = true
+			}
+		}
+		if !hasAdmin && len(t.Members) > 0 {
+			t.Members[0].Role = model.TeamRoleAdmin
+			changed = true
+		}
 	}
 	return changed
 }
