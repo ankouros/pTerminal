@@ -83,6 +83,9 @@ type Host struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 
+	// UID is a stable identifier used for sync across peers.
+	UID string `json:"uid,omitempty"`
+
 	Host string `json:"host"`
 	Port int    `json:"port"`
 	User string `json:"user"`
@@ -103,15 +106,44 @@ type Host struct {
 
 	// Legacy (kept for backward compatibility with older exported configs).
 	SFTPEnabled bool `json:"sftpEnabled,omitempty"`
+
+	// Scope controls whether the host is private to this user or shared with a team.
+	Scope Scope `json:"scope,omitempty"`
+
+	// TeamID links this host to a team when Scope=team.
+	TeamID string `json:"teamId,omitempty"`
+
+	// Sync metadata for conflict detection.
+	UpdatedAt int64           `json:"updatedAt,omitempty"`
+	UpdatedBy string          `json:"updatedBy,omitempty"`
+	Version   map[string]int `json:"version,omitempty"`
+	Conflict  bool            `json:"conflict,omitempty"`
+	Deleted   bool            `json:"deleted,omitempty"`
 }
 
 type Network struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`
 	Hosts []Host `json:"hosts"`
+
+	// UID is a stable identifier used for sync across peers.
+	UID string `json:"uid,omitempty"`
+
+	// TeamID links this network to a team (empty = private/personal).
+	TeamID string `json:"teamId,omitempty"`
+
+	// Sync metadata for conflict detection.
+	UpdatedAt int64           `json:"updatedAt,omitempty"`
+	UpdatedBy string          `json:"updatedBy,omitempty"`
+	Version   map[string]int `json:"version,omitempty"`
+	Conflict  bool            `json:"conflict,omitempty"`
+	Deleted   bool            `json:"deleted,omitempty"`
 }
 
 type AppConfig struct {
-	Version  int       `json:"version"`
-	Networks []Network `json:"networks"`
+	Version  int          `json:"version"`
+	User     UserProfile  `json:"user"`
+	Teams    []Team       `json:"teams,omitempty"`
+	Scripts  []TeamScript `json:"scripts,omitempty"`
+	Networks []Network    `json:"networks"`
 }

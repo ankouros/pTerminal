@@ -78,7 +78,8 @@ html, body {
   box-shadow: 0 6px 18px rgba(0,0,0,0.35);
 }
 
-#network-select {
+#network-select,
+#team-select {
   height: 32px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -121,8 +122,61 @@ html, body {
 
 #hosts {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
+}
+
+#scripts-title {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+#scripts {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+
+.script-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.script-item:hover {
+  background: var(--bg-hover);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.script-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.script-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.script-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .node {
@@ -709,6 +763,138 @@ html, body {
 
 .about-grid .label { opacity: 0.7; }
 .about-grid .value { word-break: break-all; }
+
+/* Teams modal */
+.teams-card {
+  width: 900px;
+  max-width: calc(100vw - 32px);
+}
+
+.teams-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.teams-profile {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+}
+
+.teams-profile-row {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+}
+
+.teams-list {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+  padding: 10px;
+  min-height: 280px;
+}
+
+#teams-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.teams-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.teams-list-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  margin-bottom: 6px;
+}
+
+.teams-list-item.active {
+  border-color: rgba(90,167,255,0.5);
+  background: rgba(90,167,255,0.08);
+}
+
+.teams-list-item:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.team-detail {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.team-repo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-repo-row .value {
+  flex: 1;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.team-add-member {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.team-member-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  margin-bottom: 6px;
+}
+
+.team-member-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.team-member-status.active {
+  color: var(--text-success);
+}
+
+.teams-actions {
+  margin-top: 10px;
+  justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .teams-grid {
+    grid-template-columns: 1fr;
+  }
+  .teams-profile-row {
+    grid-template-columns: 1fr;
+  }
+  .team-add-member {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* ===============================
    Editor form

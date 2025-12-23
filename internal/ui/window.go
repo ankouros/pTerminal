@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -16,9 +17,12 @@ import (
 	"time"
 
 	"github.com/ankouros/pterminal/internal/config"
+	"github.com/ankouros/pterminal/internal/model"
+	"github.com/ankouros/pterminal/internal/p2p"
 	"github.com/ankouros/pterminal/internal/session"
 	"github.com/ankouros/pterminal/internal/sftpclient"
 	"github.com/ankouros/pterminal/internal/sshclient"
+	"github.com/ankouros/pterminal/internal/teamrepo"
 	"github.com/ankouros/pterminal/internal/terminal"
 	webview "github.com/webview/webview_go"
 	"golang.org/x/crypto/ssh"
@@ -66,6 +70,7 @@ type Window struct {
 	wv   webview.WebView
 	mgr  *session.Manager
 	sftp *sftpclient.Manager
+	p2p  *p2p.Service
 
 	// pending host-key trust data
 	pendingTrust map[int]pendingKey
@@ -167,7 +172,7 @@ func fail(code string, extra rpcResp) string {
 	return string(b)
 }
 
-func NewWindow(mgr *session.Manager) (*Window, error) {
+func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 	wv := webview.New(true)
 	if err := validateWebView(wv); err != nil {
 		return nil, err
@@ -177,6 +182,7 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 		wv:           wv,
 		mgr:          mgr,
 		sftp:         sftpclient.NewManager(mgr.Config()),
+		p2p:          p2pSvc,
 		pendingTrust: make(map[int]pendingKey),
 		pwCache:      make(map[int]string),
 		attached:     make(map[attachKey]terminal.Session),
@@ -212,20 +218,29 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 			}
 			w.mgr.SetConfig(cfg)
 			w.sftp.SetConfig(cfg)
+			if w.p2p != nil {
+				w.p2p.SetConfig(cfg)
+			}
 			return ok(rpcResp{"config": cfg})
 
 		case "config_save":
 			raw, _ := json.Marshal(req.Config)
 			current := w.mgr.Config()
-			if err := json.Unmarshal(raw, &current); err != nil {
+			var incoming model.AppConfig
+			if err := json.Unmarshal(raw, &incoming); err != nil {
 				return fail("config_save_failed", nil)
 			}
-			if err := config.Save(current); err != nil {
+			updated, _ := p2p.ApplyLocalEdits(current, incoming)
+			if err := config.Save(updated); err != nil {
 				return fail("config_save_failed", nil)
 			}
-			w.mgr.SetConfig(current)
-			w.sftp.SetConfig(current)
-			return ok(nil)
+			w.mgr.SetConfig(updated)
+			w.sftp.SetConfig(updated)
+			if w.p2p != nil {
+				w.p2p.SetConfig(updated)
+				w.p2p.SyncNow()
+			}
+			return ok(rpcResp{"config": updated})
 
 		case "config_export":
 			path, err := config.ExportToDownloads()
@@ -261,6 +276,10 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 
 			w.mgr.SetConfig(cfg)
 			w.sftp.SetConfig(cfg)
+			if w.p2p != nil {
+				w.p2p.SetConfig(cfg)
+				w.p2p.SyncNow()
+			}
 			return ok(rpcResp{
 				"config":       cfg,
 				"importPath":   path,
@@ -626,6 +645,29 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 		case "about":
 			return ok(rpcResp{"text": "pTerminal – SSH Terminal Manager"})
 
+		case "teams_presence":
+			if w.p2p == nil {
+				return ok(rpcResp{"peers": []p2p.PeerInfo{}, "user": w.mgr.Config().User})
+			}
+			presence := w.p2p.Presence()
+			return ok(rpcResp{"peers": presence.Peers, "user": presence.User})
+
+		case "team_repo_paths":
+			cfg := w.mgr.Config()
+			p, err := config.ConfigPath()
+			if err != nil {
+				return fail("config_load_failed", nil)
+			}
+			base := filepath.Dir(p)
+			paths := map[string]string{}
+			for _, t := range cfg.Teams {
+				if t.ID == "" {
+					continue
+				}
+				paths[t.ID] = teamrepo.TeamDir(base, t.ID)
+			}
+			return ok(rpcResp{"paths": paths})
+
 		default:
 			return fail("unknown_rpc", nil)
 		}
@@ -637,6 +679,22 @@ func NewWindow(mgr *session.Manager) (*Window, error) {
 	w.startIOLoops()
 	w.startPTYFlushLoop()
 	return w, nil
+}
+
+func (w *Window) ApplyConfig(cfg model.AppConfig) {
+	w.mgr.SetConfig(cfg)
+	w.sftp.SetConfig(cfg)
+	if w.p2p != nil {
+		w.p2p.SetConfig(cfg)
+	}
+
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return
+	}
+	w.wv.Dispatch(func() {
+		w.wv.Eval("window.__applyConfig(" + string(b) + ");")
+	})
 }
 
 func (w *Window) startIOLoops() {

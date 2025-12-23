@@ -13,6 +13,7 @@ Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written
 - [Import / export](#import--export)
 - [Releases & distribution](#releases--distribution)
 - [Development workflow](#development-workflow)
+- [LAN smoke test](#lan-smoke-test)
 - [Troubleshooting & tips](#troubleshooting--tips)
 
 ## Features
@@ -142,6 +143,17 @@ Minimal example:
 - `make release` / `make portable` / `make flatpak` – produce distributable bundles
 
 Before sending patches, run `make fmt` and `make vet` (mirrors CI). For UI/asset edits, ensure the `go:embed` lists in `internal/ui/assets` stay in sync.
+
+## LAN smoke test
+
+Quick checklist for two instances on the same LAN:
+
+1. Launch pTerminal on two machines (or two user sessions on the same machine).
+2. In **Teams**, set your profile email on each instance (must match a member entry).
+3. Create a team on instance A, add instance B's email as a member.
+4. In the team dropdown, pick the new team and create a network + host with scope = Team.
+5. Verify instance B sees the team, team members, and the shared network/host.
+6. In the team repo folder (`~/.config/pterminal/teams/<teamId>/`), create a file and confirm it syncs to the other instance.
 
 ## Troubleshooting & tips
 

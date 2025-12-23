@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,8 +17,10 @@ const (
 	ConfigDirName  = "pterminal"
 	ConfigFileName = "pterminal.json"
 
-	ConfigVersionCurrent = 1
+	ConfigVersionCurrent = 2
 )
+
+var cfgMu sync.Mutex
 
 // -----------------------------
 // Defaults
@@ -26,6 +29,9 @@ const (
 func DefaultConfig() model.AppConfig {
 	return model.AppConfig{
 		Version: ConfigVersionCurrent,
+		User: model.UserProfile{
+			DeviceID: model.NewID(),
+		},
 		Networks: []model.Network{
 			{
 				ID:   1,
@@ -45,6 +51,7 @@ func DefaultConfig() model.AppConfig {
 							Mode: model.HostKeyKnownHosts,
 						},
 						SFTPEnabled: false, // placeholder
+						Scope:       model.ScopePrivate,
 					},
 				},
 			},
@@ -81,6 +88,20 @@ func ensureDir() (string, error) {
 // -----------------------------
 
 func EnsureConfig() (model.AppConfig, string, error) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
+
+	return ensureConfigLocked()
+}
+
+func Load() (model.AppConfig, error) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
+
+	return loadLocked()
+}
+
+func ensureConfigLocked() (model.AppConfig, string, error) {
 	p, err := ConfigPath()
 	if err != nil {
 		return model.AppConfig{}, "", err
@@ -88,17 +109,17 @@ func EnsureConfig() (model.AppConfig, string, error) {
 
 	if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 		cfg := DefaultConfig()
-		if err := Save(cfg); err != nil {
+		if err := saveLocked(cfg); err != nil {
 			return model.AppConfig{}, "", err
 		}
 		return cfg, p, nil
 	}
 
-	cfg, err := Load()
+	cfg, err := loadLocked()
 	return cfg, p, err
 }
 
-func Load() (model.AppConfig, error) {
+func loadLocked() (model.AppConfig, error) {
 	p, err := ConfigPath()
 	if err != nil {
 		return model.AppConfig{}, err
@@ -117,7 +138,14 @@ func Load() (model.AppConfig, error) {
 	// ---- migration / normalization ----
 	if cfg.Version == 0 {
 		cfg.Version = ConfigVersionCurrent
-		if err := Save(cfg); err != nil {
+		if err := saveLocked(cfg); err != nil {
+			return model.AppConfig{}, err
+		}
+	}
+
+	if cfg.Version == 1 {
+		cfg.Version = ConfigVersionCurrent
+		if err := saveLocked(cfg); err != nil {
 			return model.AppConfig{}, err
 		}
 	}
@@ -140,8 +168,20 @@ func Load() (model.AppConfig, error) {
 	if normalizeSFTP(&cfg) {
 		changed = true
 	}
+	if normalizeUser(&cfg) {
+		changed = true
+	}
+	if normalizeTeams(&cfg) {
+		changed = true
+	}
+	if normalizeUIDs(&cfg) {
+		changed = true
+	}
+	if normalizeScopes(&cfg) {
+		changed = true
+	}
 	if changed {
-		if err := Save(cfg); err != nil {
+		if err := saveLocked(cfg); err != nil {
 			return model.AppConfig{}, err
 		}
 	}
@@ -169,6 +209,95 @@ func normalizeTelecom(cfg *model.AppConfig) bool {
 			}
 			if h.Telecom != nil && h.IOShell != nil {
 				h.IOShell = nil
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+func normalizeUser(cfg *model.AppConfig) bool {
+	if cfg.User.DeviceID == "" {
+		cfg.User.DeviceID = model.NewID()
+		return true
+	}
+	return false
+}
+
+func normalizeTeams(cfg *model.AppConfig) bool {
+	changed := false
+	seen := make(map[string]struct{}, len(cfg.Teams))
+	for i := range cfg.Teams {
+		t := &cfg.Teams[i]
+		if t.ID == "" || containsTeamID(seen, t.ID) {
+			t.ID = model.NewID()
+			changed = true
+		}
+		seen[t.ID] = struct{}{}
+	}
+	return changed
+}
+
+func containsTeamID(seen map[string]struct{}, id string) bool {
+	_, ok := seen[id]
+	return ok
+}
+
+func normalizeScopes(cfg *model.AppConfig) bool {
+	changed := false
+	for ni := range cfg.Networks {
+		netw := &cfg.Networks[ni]
+		teamFromHosts := ""
+		for hi := range netw.Hosts {
+			h := &netw.Hosts[hi]
+			if h.Scope == "" {
+				h.Scope = model.ScopePrivate
+				changed = true
+			}
+			if h.Scope == model.ScopeTeam && h.TeamID == "" && netw.TeamID != "" {
+				h.TeamID = netw.TeamID
+				changed = true
+			}
+			if h.Scope == model.ScopePrivate && h.TeamID != "" {
+				h.TeamID = ""
+				changed = true
+			}
+			if h.Scope == model.ScopeTeam && h.TeamID != "" && teamFromHosts == "" {
+				teamFromHosts = h.TeamID
+			}
+		}
+		if netw.TeamID == "" && teamFromHosts != "" {
+			netw.TeamID = teamFromHosts
+			changed = true
+		}
+	}
+
+	for i := range cfg.Scripts {
+		s := &cfg.Scripts[i]
+		if s.Scope == "" {
+			s.Scope = model.ScopePrivate
+			changed = true
+		}
+		if s.Scope == model.ScopePrivate && s.TeamID != "" {
+			s.TeamID = ""
+			changed = true
+		}
+	}
+	return changed
+}
+
+func normalizeUIDs(cfg *model.AppConfig) bool {
+	changed := false
+	for ni := range cfg.Networks {
+		netw := &cfg.Networks[ni]
+		if netw.UID == "" {
+			netw.UID = model.NewID()
+			changed = true
+		}
+		for hi := range netw.Hosts {
+			h := &netw.Hosts[hi]
+			if h.UID == "" {
+				h.UID = model.NewID()
 				changed = true
 			}
 		}
@@ -312,6 +441,13 @@ func normalizeSFTP(cfg *model.AppConfig) bool {
 
 // Save writes the config atomically (tmp + fsync + rename)
 func Save(cfg model.AppConfig) error {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
+
+	return saveLocked(cfg)
+}
+
+func saveLocked(cfg model.AppConfig) error {
 	p, err := ensureDir()
 	if err != nil {
 		return err

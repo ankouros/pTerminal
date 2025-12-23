@@ -23,6 +23,7 @@
           <span>pTerminal</span>
         </div>
 
+        <select id="team-select" title="Select team" aria-label="Select team"></select>
         <select id="network-select" title="Select network" aria-label="Select network"></select>
 
         <button id="btn-add-network" class="btn small" title="Add network">
@@ -40,8 +41,8 @@
         <button id="btn-import" class="btn small secondary" title="Import configuration (.json)">
           Import
         </button>
-        <button id="btn-sftp" class="btn small secondary" disabled title="SFTP browser (coming soon)">
-          SFTP
+        <button id="btn-teams" class="btn small secondary" title="Teams">
+          Teams
         </button>
         <button id="btn-about" class="btn small secondary" title="About pTerminal">
           About
@@ -53,6 +54,13 @@
       <aside id="sidebar" role="navigation" aria-label="Hosts">
         <div id="sidebar-title">Hosts</div>
         <div id="hosts" role="list"></div>
+        <div id="scripts-title">
+          <span>Scripts</span>
+          <button id="btn-add-script" class="btn small secondary" title="Add script">
+            + Script
+          </button>
+        </div>
+        <div id="scripts" role="list"></div>
       </aside>
 
       <main id="main" role="main">
@@ -178,6 +186,69 @@
     </div>
   </div>
 
+  <!-- Teams modal -->
+  <div id="teams-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="teams-title">
+    <div class="modal-card teams-card">
+      <div class="modal-title" id="teams-title">Teams</div>
+
+      <div class="modal-body teams-body">
+        <div class="teams-profile">
+          <div class="label">Your profile</div>
+          <div class="teams-profile-row">
+            <input id="profile-name" type="text" placeholder="Name" />
+            <input id="profile-email" type="email" placeholder="Email" />
+            <button id="profile-save" class="btn small primary">Save</button>
+          </div>
+        </div>
+
+        <div class="teams-grid">
+          <div class="teams-list">
+            <div class="teams-list-header">
+              <div class="label">Teams</div>
+              <button id="btn-team-create" class="btn small secondary">+ Team</button>
+            </div>
+            <div id="teams-list" role="list"></div>
+          </div>
+
+          <div class="team-detail">
+            <div class="form-group">
+              <label>Name</label>
+              <input id="team-name" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Team ID</label>
+              <div id="team-id" class="value mono"></div>
+            </div>
+            <div class="form-group">
+              <label>Repo Path</label>
+              <div class="team-repo-row">
+                <div id="team-repo-path" class="value mono"></div>
+                <button id="team-copy-path" class="btn small secondary">Copy</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Members</label>
+              <div id="team-members"></div>
+              <div class="team-add-member">
+                <input id="team-member-name" type="text" placeholder="Name" />
+                <input id="team-member-email" type="email" placeholder="Email" />
+                <button id="team-add-member" class="btn small">Add</button>
+              </div>
+            </div>
+            <div class="modal-actions teams-actions">
+              <button id="team-delete" class="btn secondary">Delete</button>
+              <button id="team-save" class="btn primary">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="teams-close" class="btn secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="trust-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trust-title">
     <div class="modal-card">
       <div id="trust-title" class="modal-title">Trust SSH Host Key?</div>
@@ -210,6 +281,45 @@
     </div>
   </div>
 
+  <!-- Script editor modal -->
+  <div id="script-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="script-title">
+    <div class="modal-card">
+      <div class="modal-title" id="script-title">Script</div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Name *</label>
+          <input id="script-name" type="text" required />
+        </div>
+        <div class="form-group">
+          <label>Command *</label>
+          <textarea id="script-command" rows="3" required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="script-description" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Scope</label>
+          <select id="script-scope">
+            <option value="private">Private</option>
+            <option value="team">Team</option>
+          </select>
+        </div>
+        <div class="form-group" id="script-team-row">
+          <label>Team</label>
+          <select id="script-team"></select>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="script-delete" class="btn secondary">Delete</button>
+        <button id="script-cancel" class="btn secondary">Cancel</button>
+        <button id="script-save" class="btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- =========================================================
      Host / Network Editor Modal
      ========================================================= -->
@@ -224,11 +334,33 @@
             <label>Name *</label>
             <input id="net-name" type="text" required />
           </div>
+          <div class="form-group hidden" data-scope="network">
+            <label>Scope</label>
+            <select id="net-scope">
+              <option value="private">Private</option>
+              <option value="team">Team</option>
+            </select>
+          </div>
+          <div class="form-group hidden" data-scope="network" id="net-team-row">
+            <label>Team</label>
+            <select id="net-team"></select>
+          </div>
 
           <!-- Host fields -->
           <div class="form-group hidden" data-scope="host">
             <label>Name *</label>
             <input id="host-name" type="text" required />
+          </div>
+          <div class="form-group hidden" data-scope="host">
+            <label>Scope</label>
+            <select id="host-scope">
+              <option value="private">Private</option>
+              <option value="team">Team</option>
+            </select>
+          </div>
+          <div class="form-group hidden" data-scope="host" id="host-team-row">
+            <label>Team</label>
+            <select id="host-team"></select>
           </div>
 
           <div class="form-group hidden" data-scope="host">

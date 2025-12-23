@@ -28,7 +28,7 @@ func ImportFromFile(path string) (cfg model.AppConfig, backupPath string, err er
 		return model.AppConfig{}, "", fmt.Errorf("invalid config JSON: %w", err)
 	}
 
-	if cfg.Version == 0 {
+	if cfg.Version == 0 || cfg.Version == 1 {
 		cfg.Version = ConfigVersionCurrent
 	}
 	if cfg.Version != ConfigVersionCurrent {
@@ -43,6 +43,10 @@ func ImportFromFile(path string) (cfg model.AppConfig, backupPath string, err er
 	_ = normalizeTelecom(&cfg)
 	_ = migrateSFTP(&cfg)
 	_ = normalizeSFTP(&cfg)
+	_ = normalizeUser(&cfg)
+	_ = normalizeTeams(&cfg)
+	_ = normalizeUIDs(&cfg)
+	_ = normalizeScopes(&cfg)
 
 	cfgPath, err := ensureDir()
 	if err != nil {

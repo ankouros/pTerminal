@@ -56,12 +56,18 @@
   /* ===================== State ===================== */
 
   let config = null;
+  let activeTeamId = "";
   let activeNetworkId = null;
   let activeHostId = null;
   let activeTermTabId = null;
   let activeState = "disconnected";
   let activeTab = "terminal"; // terminal | files
   let activeHostHasSFTP = false;
+
+  let teamPresence = { peers: [], user: null };
+  let teamRepoPaths = {};
+  let teamsModalOpen = false;
+  let activeTeamDetailId = null;
 
   const hostTerminals = new Map(); // hostId -> { tabs, tabOrder, tabNames, activeTabId, nextTabId, lastState }
   let activePane = null;
@@ -83,6 +89,30 @@
   let resizeTimer = null;
   let lastResize = { cols: 0, rows: 0 };
   let inputInFlight = false;
+
+  /* ===================== Teams ===================== */
+
+  function normalizeEmail(email) {
+    return String(email || "").trim().toLowerCase();
+  }
+
+  function userEmail() {
+    return normalizeEmail(config?.user?.email || "");
+  }
+
+  function isUserInTeam(team) {
+    const email = userEmail();
+    if (!email) return false;
+    return (team?.members || []).some((m) => normalizeEmail(m.email) === email);
+  }
+
+  function visibleTeams() {
+    return (config?.teams || []).filter((t) => !t.deleted && isUserInTeam(t));
+  }
+
+  function getTeamById(id) {
+    return (config?.teams || []).find((t) => t.id === id);
+  }
 
   /* ===================== Terminal ===================== */
 
@@ -1520,7 +1550,8 @@
 
     const net = config.networks.find((n) => n.id === activeNetworkId);
     if (!net) return;
-    net.hosts = net.hosts.filter((h) => h.id !== host.id);
+    const target = net.hosts.find((h) => h.id === host.id);
+    if (target) target.deleted = true;
     saveConfig();
   }
 
@@ -1531,6 +1562,12 @@
 
     const clone = JSON.parse(JSON.stringify(host));
     clone.id = nextHostId();
+    clone.uid = "";
+    clone.updatedAt = 0;
+    clone.updatedBy = "";
+    clone.version = null;
+    clone.conflict = false;
+    clone.deleted = false;
 
     const baseName = `${host.name} (duplicated)`;
     const used = new Set((net.hosts || []).map((h) => String(h?.name || "")));
@@ -1567,12 +1604,65 @@
     return nextId(allHosts);
   }
 
+  function isPersonalView() {
+    return !activeTeamId;
+  }
+
+  function isNetworkVisible(net) {
+    if (!net || net.deleted) return false;
+    if (isPersonalView()) {
+      return !net.teamId;
+    }
+    return net.teamId === activeTeamId;
+  }
+
+  function isHostVisible(host) {
+    if (!host || host.deleted) return false;
+    if (isPersonalView()) {
+      return host.scope !== "team" && !host.teamId;
+    }
+    return host.scope === "team" && host.teamId === activeTeamId;
+  }
+
+  function visibleNetworks() {
+    return (config?.networks || []).filter((net) => isNetworkVisible(net));
+  }
+
+  function visibleHosts(net) {
+    return (net?.hosts || []).filter((h) => isHostVisible(h));
+  }
+
+  function renderTeamSelect() {
+    const sel = el("team-select");
+    if (!sel) return;
+
+    sel.innerHTML = "";
+    const personal = document.createElement("option");
+    personal.value = "";
+    personal.textContent = "Personal";
+    sel.appendChild(personal);
+
+    const teams = visibleTeams();
+    teams.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.name || "Untitled Team";
+      sel.appendChild(opt);
+    });
+
+    if (activeTeamId && !teams.some((t) => t.id === activeTeamId)) {
+      activeTeamId = "";
+    }
+    sel.value = activeTeamId ?? "";
+  }
+
   function renderNetworks() {
     const sel = el("network-select");
     sel.innerHTML = "";
     const frag = document.createDocumentFragment();
 
-    config.networks.forEach((net) => {
+    const nets = visibleNetworks();
+    nets.forEach((net) => {
       const opt = document.createElement("option");
       opt.value = net.id;
       opt.textContent = net.name;
@@ -1580,8 +1670,11 @@
     });
     sel.appendChild(frag);
 
-    if (!activeNetworkId && config.networks.length) {
-      activeNetworkId = config.networks[0].id;
+    if (!activeNetworkId && nets.length) {
+      activeNetworkId = nets[0].id;
+    }
+    if (activeNetworkId && !nets.some((n) => n.id === activeNetworkId)) {
+      activeNetworkId = nets.length ? nets[0].id : null;
     }
 
     sel.value = activeNetworkId ?? "";
@@ -1595,13 +1688,24 @@
     const net = config.networks.find((n) => n.id === activeNetworkId);
     if (!net) return;
 
-    net.hosts.forEach((h) => {
+    const hosts = visibleHosts(net);
+    if (activeHostId && !hosts.some((h) => h.id === activeHostId)) {
+      activeHostId = null;
+      activeTermTabId = null;
+      activeState = "disconnected";
+      activeHostHasSFTP = false;
+      el("title").textContent = "Select a host";
+      updateStatus(null);
+    }
+
+    hosts.forEach((h) => {
       const div = document.createElement("div");
       div.className = "node";
       if (h.id === activeHostId) div.classList.add("active");
 
       const sftpOn = !!(h.sftp?.enabled || h.sftpEnabled);
       const sftpTag = sftpOn ? " · sftp" : "";
+      const scopeTag = h.scope === "team" ? " · team" : " · private";
 
       div.innerHTML = `
         <div class="node-name">${esc(h.name)}</div>
@@ -1609,6 +1713,7 @@
           ${esc(h.user)}@${esc(h.host)}:${esc(h.port ?? 22)}
           · ${esc(h.driver || "ssh")}
           · ${esc(h.auth?.method || "password")}
+          ${scopeTag}
           ${sftpTag}
         </div>
       `;
@@ -1620,6 +1725,78 @@
       frag.appendChild(div);
     });
     container.appendChild(frag);
+  }
+
+  /* ===================== Scripts ===================== */
+
+  function isScriptVisible(script) {
+    if (!script || script.deleted) return false;
+    if (isPersonalView()) {
+      return script.scope !== "team" && !script.teamId;
+    }
+    return script.scope === "team" && script.teamId === activeTeamId;
+  }
+
+  function renderScripts() {
+    const container = el("scripts");
+    if (!container) return;
+    container.innerHTML = "";
+    const frag = document.createDocumentFragment();
+
+    const scripts = (config?.scripts || []).filter(isScriptVisible);
+    scripts.forEach((script) => {
+      const item = document.createElement("div");
+      item.className = "script-item";
+
+      const name = document.createElement("div");
+      name.className = "script-name";
+      name.textContent = script.name || "Untitled script";
+
+      const meta = document.createElement("div");
+      meta.className = "script-meta";
+      meta.textContent = script.description || script.command || "";
+
+      const actions = document.createElement("div");
+      actions.className = "script-actions";
+
+      const runBtn = document.createElement("button");
+      runBtn.className = "btn small secondary";
+      runBtn.textContent = "Run";
+      runBtn.onclick = (e) => {
+        e.stopPropagation();
+        runScript(script);
+      };
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn small secondary";
+      editBtn.textContent = "Edit";
+      editBtn.onclick = (e) => {
+        e.stopPropagation();
+        openScriptEditor("edit", script);
+      };
+
+      actions.appendChild(runBtn);
+      actions.appendChild(editBtn);
+
+      item.appendChild(name);
+      if (meta.textContent) item.appendChild(meta);
+      item.appendChild(actions);
+
+      item.ondblclick = () => openScriptEditor("edit", script);
+
+      frag.appendChild(item);
+    });
+
+    container.appendChild(frag);
+  }
+
+  function runScript(script) {
+    if (!script?.command) return;
+    if (!activeHostId || !activeTermTabId) {
+      alert("Select a host before running a script.");
+      return;
+    }
+    queueInput(script.command + "\r");
   }
 
   /* ===================== Connection ===================== */
@@ -1690,6 +1867,34 @@
   let editorMode = null;
   let editorType = null;
   let editorTarget = null;
+  let scriptEditorMode = null;
+  let scriptEditorTarget = null;
+  let pendingTeamName = null;
+
+  function fillTeamSelect(select, selectedId, includeEmpty) {
+    if (!select) return;
+    select.innerHTML = "";
+    if (includeEmpty) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Select team";
+      select.appendChild(opt);
+    }
+    const teams = (config?.teams || []).filter((t) => !t.deleted);
+    teams.forEach((team) => {
+      const opt = document.createElement("option");
+      opt.value = team.id;
+      opt.textContent = team.name || "Untitled Team";
+      select.appendChild(opt);
+    });
+    if (selectedId && !teams.some((t) => t.id === selectedId)) {
+      const opt = document.createElement("option");
+      opt.value = selectedId;
+      opt.textContent = `Unknown team (${selectedId.slice(0, 8)})`;
+      select.appendChild(opt);
+    }
+    select.value = selectedId || "";
+  }
 
   function openEditor(type, mode, target = null) {
     editorType = type;
@@ -1709,6 +1914,11 @@
 
     if (type === "network") {
       el("net-name").value = target?.name || "";
+      const netScope = target?.teamId ? "team" : activeTeamId ? "team" : "private";
+      const teamId = target?.teamId || (activeTeamId || "");
+      el("net-scope").value = netScope;
+      fillTeamSelect(el("net-team"), teamId, true);
+      applyNetworkScopeVisibility();
       validateEditor();
       el("editor-modal").classList.remove("hidden");
       return;
@@ -1727,6 +1937,11 @@
 
     el("host-user").value = target?.user || "root";
     el("host-port").value = target?.port || 22;
+
+    const hostScope = target?.scope || (activeTeamId ? "team" : "private");
+    el("host-scope").value = hostScope;
+    const hostTeamId = target?.teamId || (activeTeamId || "");
+    fillTeamSelect(el("host-team"), hostTeamId, true);
 
     // Connection driver
     el("host-driver").value = driver;
@@ -1753,6 +1968,7 @@
     el("telecom-command").value = target?.telecom?.command || "";
 
     applyHostDriverVisibility();
+    applyHostScopeVisibility();
     applySFTPVisibility();
 
     validateEditor();
@@ -1762,6 +1978,22 @@
   el("host-auth").addEventListener("change", () => {
     validateEditor();
   });
+
+  function applyNetworkScopeVisibility() {
+    const scope = el("net-scope")?.value || "private";
+    el("net-team-row")?.classList.toggle("hidden", scope !== "team");
+    if (scope === "team" && !el("net-team")?.value && activeTeamId) {
+      el("net-team").value = activeTeamId;
+    }
+  }
+
+  function applyHostScopeVisibility() {
+    const scope = el("host-scope")?.value || "private";
+    el("host-team-row")?.classList.toggle("hidden", scope !== "team");
+    if (scope === "team" && !el("host-team")?.value && activeTeamId) {
+      el("host-team").value = activeTeamId;
+    }
+  }
 
   function applyHostDriverVisibility() {
     const driver = el("host-driver")?.value || "ssh";
@@ -1773,6 +2005,14 @@
   }
 
   el("host-driver").addEventListener("change", applyHostDriverVisibility);
+  el("host-scope").addEventListener("change", () => {
+    applyHostScopeVisibility();
+    validateEditor();
+  });
+  el("net-scope").addEventListener("change", () => {
+    applyNetworkScopeVisibility();
+    validateEditor();
+  });
 
   function applySFTPVisibility() {
     const enabled = !!el("sftp-enabled")?.checked;
@@ -1792,7 +2032,11 @@
     let ok = true;
 
     if (editorType === "network") {
+      const scope = el("net-scope")?.value || "private";
       ok = !!el("net-name").value.trim();
+      if (ok && scope === "team") {
+        ok = !!el("net-team").value;
+      }
     }
 
     if (editorType === "host") {
@@ -1812,6 +2056,9 @@
           ok = !!el("sftp-user").value.trim() && !!el("sftp-password").value;
         }
       }
+      if (ok && el("host-scope")?.value === "team") {
+        ok = !!el("host-team").value;
+      }
     }
 
     el("editor-save").disabled = !ok;
@@ -1825,6 +2072,8 @@
     "host-port",
     "host-driver",
     "host-auth",
+    "net-team",
+    "host-team",
     "telecom-path",
     "telecom-protocol",
     "telecom-command",
@@ -1832,7 +2081,7 @@
     "sftp-password",
   ].forEach((id) => el(id)?.addEventListener("input", validateEditor));
 
-  ["sftp-enabled", "sftp-cred-mode"].forEach((id) =>
+  ["sftp-enabled", "sftp-cred-mode", "net-scope", "host-scope"].forEach((id) =>
     el(id)?.addEventListener("change", () => {
       applySFTPVisibility();
       validateEditor();
@@ -1841,14 +2090,18 @@
 
   el("editor-save").onclick = () => {
     if (editorType === "network") {
+      const netScope = el("net-scope").value || "private";
+      const netTeam = netScope === "team" ? el("net-team").value : "";
       if (editorMode === "create") {
         config.networks.push({
           id: nextNetworkId(),
           name: el("net-name").value.trim(),
+          teamId: netTeam,
           hosts: [],
         });
       } else {
         editorTarget.name = el("net-name").value.trim();
+        editorTarget.teamId = netTeam;
       }
     }
 
@@ -1861,12 +2114,17 @@
       const sftpEnabled = !!el("sftp-enabled").checked;
       const sftpMode = el("sftp-cred-mode").value || "connection";
 
+      const hostScope = el("host-scope")?.value || "private";
+      const hostTeamId = hostScope === "team" ? el("host-team").value : "";
+
       const data = {
         name: el("host-name").value.trim(),
         host: el("host-host").value.trim(),
         user: el("host-user").value.trim(),
         port: Number(el("host-port").value),
         driver,
+        scope: hostScope,
+        teamId: hostTeamId,
         auth: {
           method: el("host-auth").value,
           password: el("host-password").value || "",
@@ -1918,18 +2176,19 @@
       if (!confirm(`Delete host "${editorTarget.name}"?`)) return;
 
       const net = config.networks.find((n) => n.id === activeNetworkId);
-      net.hosts = net.hosts.filter((h) => h.id !== editorTarget.id);
+      const target = net.hosts.find((h) => h.id === editorTarget.id);
+      if (target) target.deleted = true;
     }
 
     if (editorType === "network") {
-      if (editorTarget.hosts?.length) {
+      if ((editorTarget.hosts || []).some((h) => !h.deleted)) {
         alert("Delete all hosts in this network first.");
         return;
       }
 
       if (!confirm(`Delete network "${editorTarget.name}"?`)) return;
 
-      config.networks = config.networks.filter((n) => n.id !== editorTarget.id);
+      editorTarget.deleted = true;
 
       activeNetworkId = null;
       activeHostId = null;
@@ -1944,6 +2203,289 @@
     if (e.key === "Escape") closeEditor();
   });
 
+  /* ===================== Script editor ===================== */
+
+  function openScriptEditor(mode, target = null) {
+    scriptEditorMode = mode;
+    scriptEditorTarget = target;
+
+    el("script-title").textContent = mode === "create" ? "Add Script" : "Edit Script";
+    el("script-name").value = target?.name || "";
+    el("script-command").value = target?.command || "";
+    el("script-description").value = target?.description || "";
+
+    const scope = target?.scope || (activeTeamId ? "team" : "private");
+    el("script-scope").value = scope;
+    fillTeamSelect(el("script-team"), target?.teamId || activeTeamId || "", true);
+    applyScriptScopeVisibility();
+    validateScriptEditor();
+
+    el("script-delete").classList.toggle("hidden", mode !== "edit");
+    el("script-modal").classList.remove("hidden");
+  }
+
+  function closeScriptEditor() {
+    el("script-modal").classList.add("hidden");
+    scriptEditorMode = null;
+    scriptEditorTarget = null;
+  }
+
+  function applyScriptScopeVisibility() {
+    const scope = el("script-scope")?.value || "private";
+    el("script-team-row")?.classList.toggle("hidden", scope !== "team");
+  }
+
+  function validateScriptEditor() {
+    let ok =
+      el("script-name").value.trim() &&
+      el("script-command").value.trim();
+
+    if (ok && el("script-scope")?.value === "team") {
+      ok = !!el("script-team").value;
+    }
+    el("script-save").disabled = !ok;
+  }
+
+  ["script-name", "script-command", "script-description"].forEach((id) =>
+    el(id)?.addEventListener("input", validateScriptEditor)
+  );
+  ["script-scope", "script-team"].forEach((id) =>
+    el(id)?.addEventListener("change", () => {
+      applyScriptScopeVisibility();
+      validateScriptEditor();
+    })
+  );
+
+  el("script-save").onclick = () => {
+    const scope = el("script-scope").value || "private";
+    const teamId = scope === "team" ? el("script-team").value : "";
+
+    const data = {
+      name: el("script-name").value.trim(),
+      command: el("script-command").value.trim(),
+      description: el("script-description").value.trim(),
+      scope,
+      teamId,
+    };
+
+    if (scriptEditorMode === "create") {
+      config.scripts = config.scripts || [];
+      config.scripts.push({
+        id: "",
+        ...data,
+      });
+    } else if (scriptEditorTarget) {
+      Object.assign(scriptEditorTarget, data);
+    }
+
+    closeScriptEditor();
+    saveConfig();
+  };
+
+  el("script-delete").onclick = () => {
+    if (!scriptEditorTarget) return;
+    if (!confirm(`Delete script "${scriptEditorTarget.name}"?`)) return;
+    scriptEditorTarget.deleted = true;
+    closeScriptEditor();
+    saveConfig();
+  };
+
+  el("script-cancel").onclick = closeScriptEditor;
+
+  /* ===================== Teams modal ===================== */
+
+  let teamsPresenceTimer = null;
+
+  function openTeamsModal() {
+    teamsModalOpen = true;
+    el("teams-modal").classList.remove("hidden");
+    if (!activeTeamDetailId) {
+      activeTeamDetailId = (config?.teams || []).find((t) => !t.deleted)?.id || null;
+    }
+    refreshTeamRepoPaths();
+    refreshTeamPresence();
+    renderTeamsModal();
+    if (!teamsPresenceTimer) {
+      teamsPresenceTimer = setInterval(refreshTeamPresence, 4000);
+    }
+  }
+
+  function closeTeamsModal() {
+    teamsModalOpen = false;
+    el("teams-modal").classList.add("hidden");
+    if (teamsPresenceTimer) {
+      clearInterval(teamsPresenceTimer);
+      teamsPresenceTimer = null;
+    }
+  }
+
+  function refreshTeamPresence() {
+    rpc({ type: "teams_presence" })
+      .then((res) => {
+        teamPresence = res || { peers: [], user: null };
+        if (teamsModalOpen) {
+          renderTeamsModal();
+          refreshTeamRepoPaths();
+        }
+      })
+      .catch(() => {});
+  }
+
+  function refreshTeamRepoPaths() {
+    rpc({ type: "team_repo_paths" })
+      .then((res) => {
+        teamRepoPaths = res.paths || {};
+        if (teamsModalOpen) renderTeamsModal();
+      })
+      .catch(() => {});
+  }
+
+  function isMemberActive(email) {
+    const norm = normalizeEmail(email);
+    if (!norm) return false;
+    const now = Date.now() / 1000;
+    return (teamPresence.peers || []).some(
+      (p) => normalizeEmail(p.email) === norm && now - (p.lastSeen || 0) < 20
+    );
+  }
+
+  function renderTeamsModal() {
+    if (!teamsModalOpen) return;
+    el("profile-name").value = config?.user?.name || "";
+    el("profile-email").value = config?.user?.email || "";
+
+    renderTeamsList();
+    renderTeamDetail();
+  }
+
+  function renderTeamsList() {
+    const container = el("teams-list");
+    container.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    (config?.teams || [])
+      .filter((t) => !t.deleted)
+      .forEach((team) => {
+        const div = document.createElement("div");
+        div.className = "teams-list-item";
+        if (team.id === activeTeamDetailId) div.classList.add("active");
+
+        const activeCount = (team.members || []).filter((m) => isMemberActive(m.email)).length;
+        div.innerHTML = `
+          <div>${esc(team.name || "Untitled Team")}</div>
+          <div class="team-member-status">${activeCount} active</div>
+        `;
+
+        div.onclick = () => {
+          activeTeamDetailId = team.id;
+          renderTeamsModal();
+        };
+
+        frag.appendChild(div);
+      });
+    container.appendChild(frag);
+  }
+
+  function renderTeamDetail() {
+    const team = getTeamById(activeTeamDetailId || "");
+    el("team-name").value = team?.name || "";
+    el("team-id").textContent = team?.id || "";
+    const repoPath = (team?.id && teamRepoPaths[team.id]) || "";
+    el("team-repo-path").textContent = repoPath || "Not available";
+
+    const members = el("team-members");
+    members.innerHTML = "";
+    (team?.members || []).forEach((member) => {
+      const row = document.createElement("div");
+      row.className = "team-member-row";
+      const status = isMemberActive(member.email) ? "active" : "offline";
+      row.innerHTML = `
+        <div>
+          ${esc(member.name || member.email || "Unknown")}
+          <div class="team-member-status ${status}">${status}</div>
+        </div>
+      `;
+      const remove = document.createElement("button");
+      remove.className = "btn small secondary";
+      remove.textContent = "Remove";
+      remove.onclick = () => {
+        if (!team) return;
+        team.members = (team.members || []).filter(
+          (m) => normalizeEmail(m.email) !== normalizeEmail(member.email)
+        );
+        saveConfig();
+      };
+      row.appendChild(remove);
+      members.appendChild(row);
+    });
+
+    el("team-save").disabled = !team;
+    el("team-delete").disabled = !team;
+    el("team-add-member").disabled = !team;
+    el("team-copy-path").disabled = !repoPath;
+  }
+
+  el("teams-close").onclick = closeTeamsModal;
+  el("btn-teams").onclick = openTeamsModal;
+  el("team-copy-path").onclick = () => {
+    const path = el("team-repo-path").textContent || "";
+    if (path && path !== "Not available") {
+      writeClipboardText(path).catch(() => {});
+    }
+  };
+
+  el("profile-save").onclick = () => {
+    config.user = config.user || {};
+    config.user.name = el("profile-name").value.trim();
+    config.user.email = el("profile-email").value.trim();
+    saveConfig();
+  };
+
+  el("btn-team-create").onclick = () => {
+    const name = prompt("Team name?");
+    if (!name) return;
+    const members = [];
+    const email = userEmail();
+    if (email) {
+      members.push({ email, name: config?.user?.name || "" });
+    }
+    config.teams = config.teams || [];
+    config.teams.push({ id: "", name: name.trim(), members });
+    pendingTeamName = name.trim();
+    saveConfig();
+  };
+
+  el("team-save").onclick = () => {
+    const team = getTeamById(activeTeamDetailId || "");
+    if (!team) return;
+    team.name = el("team-name").value.trim();
+    saveConfig();
+  };
+
+  el("team-delete").onclick = () => {
+    const team = getTeamById(activeTeamDetailId || "");
+    if (!team) return;
+    if (!confirm(`Delete team "${team.name}"?`)) return;
+    team.deleted = true;
+    activeTeamDetailId = null;
+    saveConfig();
+  };
+
+  el("team-add-member").onclick = () => {
+    const team = getTeamById(activeTeamDetailId || "");
+    if (!team) return;
+    const name = el("team-member-name").value.trim();
+    const email = el("team-member-email").value.trim();
+    if (!email) return;
+    if ((team.members || []).some((m) => normalizeEmail(m.email) === normalizeEmail(email))) {
+      return;
+    }
+    team.members = team.members || [];
+    team.members.push({ name, email });
+    el("team-member-name").value = "";
+    el("team-member-email").value = "";
+    saveConfig();
+  };
+
   /* ===================== Config ===================== */
 
   function saveConfig() {
@@ -1956,11 +2498,30 @@
     rpc({ type: "config_get" })
       .then((res) => {
         config = res.config;
+        if (pendingTeamName) {
+          const found = (config.teams || []).find(
+            (t) => (t.name || "") === pendingTeamName
+          );
+          if (found) activeTeamDetailId = found.id;
+          pendingTeamName = null;
+        }
+        renderTeamSelect();
         renderNetworks();
         renderHosts();
+        renderScripts();
+        if (teamsModalOpen) renderTeamsModal();
       })
       .catch((e) => alert("Failed to load config: " + (e.detail || e.error)));
   }
+
+  window.__applyConfig = (cfg) => {
+    config = cfg;
+    renderTeamSelect();
+    renderNetworks();
+    renderHosts();
+    renderScripts();
+    if (teamsModalOpen) renderTeamsModal();
+  };
 
   function resetTerminals() {
     hostTerminals.forEach((state) => {
@@ -2030,6 +2591,26 @@
 
   function bindUI() {
     const sel = el("network-select");
+    const teamSel = el("team-select");
+
+    if (teamSel) {
+      teamSel.onchange = (e) => {
+        activeTeamId = e.target.value || "";
+        activeNetworkId = null;
+        activeHostId = null;
+        activeTermTabId = null;
+        activeState = "disconnected";
+        activeHostHasSFTP = false;
+        activateTerminalForHostTab(null, null);
+        setActiveTab("terminal");
+        el("title").textContent = "Select a host";
+        renderTeamSelect();
+        renderNetworks();
+        renderHosts();
+        renderScripts();
+        updateStatus(null);
+      };
+    }
 
     sel.onchange = (e) => {
       activeNetworkId = Number(e.target.value) || null;
@@ -2059,6 +2640,8 @@
       openEditor("host", "create");
     };
 
+    el("btn-add-script").onclick = () => openScriptEditor("create");
+
     el("btn-export").onclick = () =>
       rpc({ type: "config_export" }).then((r) =>
         alert(`Config exported to:\n${r.path}`)
@@ -2078,8 +2661,10 @@
 
         resetTerminals();
         config = r.config;
+        renderTeamSelect();
         renderNetworks();
         renderHosts();
+        renderScripts();
 
         const msg = [
           `Imported:\n${r.importPath || ""}`.trim(),
@@ -2278,8 +2863,18 @@
     el("about-modal").addEventListener("click", (e) => {
       if (e.target === el("about-modal")) hideAbout();
     });
+    el("teams-modal").addEventListener("click", (e) => {
+      if (e.target === el("teams-modal")) closeTeamsModal();
+    });
+    el("script-modal").addEventListener("click", (e) => {
+      if (e.target === el("script-modal")) closeScriptEditor();
+    });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hideAbout();
+      if (e.key === "Escape") {
+        hideAbout();
+        closeTeamsModal();
+        closeScriptEditor();
+      }
     });
   }
 
