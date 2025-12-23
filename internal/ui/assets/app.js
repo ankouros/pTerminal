@@ -2300,6 +2300,9 @@
   function openTeamsModal() {
     teamsModalOpen = true;
     el("teams-modal").classList.remove("hidden");
+    profileDirty = false;
+    el("profile-name").value = config?.user?.name || "";
+    el("profile-email").value = config?.user?.email || "";
     if (!activeTeamDetailId) {
       activeTeamDetailId = (config?.teams || []).find((t) => !t.deleted)?.id || null;
     }
@@ -2354,11 +2357,6 @@
 
   function renderTeamsModal() {
     if (!teamsModalOpen) return;
-    if (!profileDirty) {
-      el("profile-name").value = config?.user?.name || "";
-      el("profile-email").value = config?.user?.email || "";
-    }
-
     renderTeamsList();
     renderTeamDetail();
   }
