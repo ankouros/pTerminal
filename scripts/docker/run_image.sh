@@ -13,8 +13,10 @@ fi
 # reflect the host. In that case, bind-mount sources must be prefixed with
 # `/var/lib/snapd/hostfs` so the daemon sees the real host filesystem.
 hostfs_prefix=""
+snap_docker=false
 if docker info 2>/dev/null | grep -q "Docker Root Dir: /var/snap/docker/"; then
   hostfs_prefix="/var/lib/snapd/hostfs"
+  snap_docker=true
   echo "Detected Docker snap; using host filesystem prefix: ${hostfs_prefix}" >&2
 fi
 
@@ -62,11 +64,43 @@ docker_args=(
   --env NO_AT_BRIDGE=1
 )
 
+force_software_render=false
+if [[ "${PTERMINAL_SOFTWARE_RENDER:-}" == "1" || "${PTERMINAL_DISABLE_GPU:-}" == "1" ]]; then
+  force_software_render=true
+fi
+if [[ "${snap_docker}" == "true" && -z "${PTERMINAL_GPU:-}" ]]; then
+  force_software_render=true
+  docker_args+=(--env GSETTINGS_BACKEND=memory)
+fi
+if [[ "${PTERMINAL_DISABLE_GSETTINGS:-}" == "1" ]]; then
+  docker_args+=(--env GSETTINGS_BACKEND=memory)
+fi
+
+if [[ "${force_software_render}" == "true" ]]; then
+  docker_args+=(--env LIBGL_ALWAYS_SOFTWARE=1)
+  docker_args+=(--env WEBKIT_DISABLE_COMPOSITING_MODE=1)
+fi
+
 # Preserve host group memberships inside the container so device permissions
 # (e.g. /dev/dri render/video) keep working when running as a non-root user.
 for gid in $(id -G); do
   docker_args+=(--group-add "${gid}")
 done
+
+group_gid() {
+  local name="$1"
+  getent group "${name}" | awk -F: '{print $3}' | head -n1
+}
+
+render_gid="$(group_gid "render")"
+video_gid="$(group_gid "video")"
+
+if [[ -n "${render_gid}" ]]; then
+  docker_args+=(--group-add "${render_gid}")
+fi
+if [[ -n "${video_gid}" ]]; then
+  docker_args+=(--group-add "${video_gid}")
+fi
 
 if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "${XDG_RUNTIME_DIR}" ]]; then
   docker_args+=(
@@ -132,6 +166,18 @@ fi
 
 if [[ -d /dev/dri ]]; then
   docker_args+=(--device /dev/dri)
+  render_node=""
+  for node in /dev/dri/renderD*; do
+    if [[ -e "${node}" ]]; then
+      render_node="${node}"
+      break
+    fi
+  done
+  if [[ -n "${render_node}" && -z "${render_gid}" && ! -r "${render_node}" ]]; then
+    echo "Warning: ${render_node} is not readable; forcing software rendering." >&2
+    docker_args+=(--env LIBGL_ALWAYS_SOFTWARE=1)
+    docker_args+=(--env WEBKIT_DISABLE_COMPOSITING_MODE=1)
+  fi
 fi
 
 pull_one() {

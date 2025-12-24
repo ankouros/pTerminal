@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -64,6 +65,88 @@ func validateWebView(wv webview.WebView) error {
 		return fmt.Errorf("GUI init failed (webview handle is nil); if running in Docker ensure display sockets + auth are passed (DISPLAY/Wayland/XAUTHORITY)")
 	}
 	return nil
+}
+
+func softwareRenderEnabled() bool {
+	if os.Getenv("PTERMINAL_SOFTWARE_RENDER") == "1" {
+		return true
+	}
+	if os.Getenv("PTERMINAL_DISABLE_GPU") == "1" {
+		return true
+	}
+	if os.Getenv("LIBGL_ALWAYS_SOFTWARE") != "" {
+		return true
+	}
+	if os.Getenv("WEBKIT_DISABLE_COMPOSITING_MODE") != "" {
+		return true
+	}
+	return false
+}
+
+func enableSoftwareRendering() {
+	if os.Getenv("LIBGL_ALWAYS_SOFTWARE") == "" {
+		_ = os.Setenv("LIBGL_ALWAYS_SOFTWARE", "1")
+	}
+	if os.Getenv("WEBKIT_DISABLE_COMPOSITING_MODE") == "" {
+		_ = os.Setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+	}
+}
+
+func shouldRetryWithSoftware(err error) bool {
+	if err == nil {
+		return false
+	}
+	if softwareRenderEnabled() {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "DISPLAY") || strings.Contains(msg, "Wayland") || strings.Contains(msg, "WAYLAND") {
+		return false
+	}
+	return true
+}
+
+func renderNodeReadable() bool {
+	nodes, _ := filepath.Glob("/dev/dri/renderD*")
+	if len(nodes) == 0 {
+		return true
+	}
+	for _, node := range nodes {
+		f, err := os.Open(node)
+		if err == nil {
+			f.Close()
+			return true
+		}
+		if os.IsPermission(err) {
+			return false
+		}
+	}
+	return true
+}
+
+func newWebViewWithFallback() (webview.WebView, error) {
+	if softwareRenderEnabled() {
+		enableSoftwareRendering()
+	} else if !renderNodeReadable() {
+		log.Printf("GPU render node is not accessible; enabling software rendering")
+		enableSoftwareRendering()
+	}
+
+	wv := webview.New(true)
+	if err := validateWebView(wv); err == nil {
+		return wv, nil
+	} else if shouldRetryWithSoftware(err) {
+		log.Printf("webview init failed: %v; retrying with software rendering", err)
+		enableSoftwareRendering()
+		wv2 := webview.New(true)
+		if err2 := validateWebView(wv2); err2 == nil {
+			return wv2, nil
+		} else {
+			return nil, fmt.Errorf("webview init failed: %w (software rendering retry: %v)", err, err2)
+		}
+	} else {
+		return nil, err
+	}
 }
 
 type Window struct {
@@ -173,8 +256,8 @@ func fail(code string, extra rpcResp) string {
 }
 
 func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
-	wv := webview.New(true)
-	if err := validateWebView(wv); err != nil {
+	wv, err := newWebViewWithFallback()
+	if err != nil {
 		return nil, err
 	}
 

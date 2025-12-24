@@ -512,6 +512,20 @@
     </div>
   </div>
 
+  <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+    <div class="modal-card prompt-card">
+      <div class="modal-title" id="prompt-title">Input</div>
+      <div class="modal-body">
+        <div id="prompt-message" class="confirm-message"></div>
+        <input id="prompt-input" class="prompt-input" type="text" />
+      </div>
+      <div class="modal-actions">
+        <button id="prompt-cancel" class="btn secondary">Cancel</button>
+        <button id="prompt-ok" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script src="vendor/xterm.js"></script>
   <script src="vendor/xterm-addon-fit.js"></script>
   <script src="vendor/xterm-addon-clipboard.js"></script>

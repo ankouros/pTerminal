@@ -46,3 +46,6 @@ if [[ -n "${GHCR_TOKEN}" ]]; then
   echo "Pushing (GHCR): ${ghcr_image}"
   docker push "${ghcr_image}"
 fi
+
+echo "Publishing Docker repository overview..."
+"${ROOT_DIR}/scripts/docker/publish_readme.sh"

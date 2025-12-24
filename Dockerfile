@@ -48,6 +48,10 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     ca-certificates \
     libgtk-3-0 \
     libwebkit2gtk-4.1-0 \
+    libegl1 \
+    libgbm1 \
+    libgl1 \
+    libgl1-mesa-dri \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /out/pterminal /usr/local/bin/pterminal

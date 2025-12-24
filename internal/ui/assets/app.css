@@ -676,6 +676,26 @@ html, body {
   white-space: pre-line;
 }
 
+.prompt-card {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+}
+
+.prompt-input {
+  margin-top: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+}
+
+.prompt-input:focus {
+  outline: none;
+  border-color: rgba(90,167,255,0.6);
+}
+
 .modal-card {
   width: 520px;
   max-width: calc(100vw - 32px);

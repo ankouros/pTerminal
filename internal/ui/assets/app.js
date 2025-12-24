@@ -14,6 +14,10 @@
   }
 
   const el = (id) => document.getElementById(id);
+  const isVisible = (id) => {
+    const node = el(id);
+    return !!node && !node.classList.contains("hidden");
+  };
 
   const esc = (s) =>
     String(s).replace(
@@ -45,7 +49,7 @@
       }
     }
     if (!container) {
-      alert(text);
+      console.warn("Toast container missing:", text);
       return;
     }
 
@@ -98,6 +102,7 @@
   const notifyError = (msg, opts) => notify(msg, "error", opts);
 
   let confirmResolver = null;
+  let promptResolver = null;
 
   function confirmDialog(message, opts = {}) {
     return new Promise((resolve) => {
@@ -117,6 +122,35 @@
       const resolve = confirmResolver;
       confirmResolver = null;
       resolve(result);
+    }
+  }
+
+  function promptDialog(message, defaultValue = "", opts = {}) {
+    return new Promise((resolve) => {
+      promptResolver = resolve;
+      el("prompt-message").textContent = String(message || "").trim();
+      const input = el("prompt-input");
+      if (input) {
+        input.type = opts.type || "text";
+        input.placeholder = opts.placeholder || "";
+        input.value = defaultValue || "";
+      }
+      el("prompt-ok").textContent = opts.okText || "OK";
+      el("prompt-cancel").textContent = opts.cancelText || "Cancel";
+      el("prompt-ok").classList.toggle("danger", !!opts.danger);
+      el("prompt-modal").classList.remove("hidden");
+      setTimeout(() => input?.focus?.(), 0);
+      input?.select?.();
+    });
+  }
+
+  function closePrompt(value) {
+    const modal = el("prompt-modal");
+    if (modal) modal.classList.add("hidden");
+    if (promptResolver) {
+      const resolve = promptResolver;
+      promptResolver = null;
+      resolve(value);
     }
   }
 
@@ -679,10 +713,10 @@
     }
   }
 
-  function renameTerminalTab(hostId, tabId) {
+  async function renameTerminalTab(hostId, tabId) {
     const state = ensureHostTerminalState(hostId);
     const current = state.tabNames.get(tabId) || `Tab ${tabId}`;
-    const next = prompt("Tab name:", current);
+    const next = await promptDialog("Tab name:", current, { okText: "Rename" });
     if (!next) return;
     state.tabNames.set(tabId, String(next).trim() || current);
     renderTerminalTabBar();
@@ -996,7 +1030,11 @@
 
       // Password required (only for connection creds + password auth)
       if (err.error === "password_required" && needsConnPw) {
-        const pw = prompt(`Password for ${host.user}@${host.host} (SFTP):`);
+        const pw = await promptDialog(
+          `Password for ${host.user}@${host.host} (SFTP):`,
+          "",
+          { okText: "Use password", type: "password" }
+        );
         if (!pw) throw err;
         host.auth.password = pw;
         saveConfig();
@@ -1275,7 +1313,7 @@
 
   async function createFolder(hostId) {
     const entry = ensureFilePane(hostId);
-    const name = prompt("New folder name:");
+    const name = await promptDialog("New folder name:", "", { okText: "Create" });
     if (!name) return;
     await sftpRpc(hostId, { type: "sftp_mkdir", path: `${entry.cwd.replace(/\/+$/, "")}/${name}` });
     await refreshFiles(hostId);
@@ -1284,7 +1322,11 @@
   async function deleteSelected(hostId) {
     const entry = ensureFilePane(hostId);
     if (!entry.selectedPath) return;
-    if (!confirm(`Delete:\n${entry.selectedPath}`)) return;
+    const ok = await confirmDialog(`Delete:\n${entry.selectedPath}`, {
+      okText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     await sftpRpc(hostId, { type: "sftp_rm", path: entry.selectedPath });
     entry.selectedPath = "";
     await refreshFiles(hostId);
@@ -1295,7 +1337,7 @@
     const from = entry.selectedPath;
     if (!from) return;
     const base = from.split("/").pop();
-    const name = prompt("Rename to:", base);
+    const name = await promptDialog("Rename to:", base, { okText: "Rename" });
     if (!name || name === base) return;
     const to = `${entry.cwd.replace(/\/+$/, "")}/${name}`;
     await sftpRpc(hostId, { type: "sftp_mv", from, to });
@@ -1369,15 +1411,18 @@
       return !modal.classList.contains("hidden");
     }
 
-    function canClose() {
+    async function canClose() {
       if (!fileEditState) return true;
       const cur = textarea.value || "";
       if (cur === (fileEditState.original || "")) return true;
-      return confirm("Discard unsaved changes?");
+      return await confirmDialog("Discard unsaved changes?", {
+        okText: "Discard",
+        danger: true,
+      });
     }
 
-    function close() {
-      if (!canClose()) return;
+    async function close() {
+      if (!(await canClose())) return;
       modal.classList.add("hidden");
       fileEditState = null;
       textarea.value = "";
@@ -1386,9 +1431,9 @@
       term?.focus?.();
     }
 
-    btnCancel.onclick = close;
+    btnCancel.onclick = () => close();
 
-    btnSave.onclick = () => {
+    btnSave.onclick = async () => {
       if (!fileEditState || fileEditState.saving) return;
       const { hostId, path } = fileEditState;
       const text = textarea.value || "";
@@ -1398,9 +1443,9 @@
       btnSave.textContent = "Saving…";
 
       sftpRpc(hostId, { type: "sftp_write", path, dataB64: b64enc(text) })
-        .then(() => {
+        .then(async () => {
           fileEditState.original = text;
-          close();
+          await close();
           refreshFiles(hostId).catch(() => {});
         })
         .catch((e) => {
@@ -1582,14 +1627,22 @@
           const driver = host?.driver || "ssh";
           if (host && driver === "ssh" && host.auth?.method === "password") {
             passwordPrompted.add(hostId);
-            const pw = prompt(`Password for ${host.user}@${host.host}:`);
-            if (pw) {
-              host.auth.password = pw;
-              saveConfig();
-              connectHost(host);
-            } else {
-              passwordPrompted.delete(hostId);
-            }
+            promptDialog(`Password for ${host.user}@${host.host}:`, "", {
+              okText: "Connect",
+              type: "password",
+            })
+              .then((pw) => {
+                if (pw) {
+                  host.auth.password = pw;
+                  saveConfig();
+                  connectHost(host);
+                } else {
+                  passwordPrompted.delete(hostId);
+                }
+              })
+              .catch(() => {
+                passwordPrompted.delete(hostId);
+              });
           }
         }
 
@@ -1707,13 +1760,17 @@
     showFileMenuAt(e.clientX, e.clientY);
   }
 
-  function deleteHostFromConfig(host) {
+  async function deleteHostFromConfig(host) {
     if (!host) return;
     if (host.id === activeHostId) {
       notifyWarn("Disconnect before deleting this host.");
       return;
     }
-    if (!confirm(`Delete host "${host.name}"?`)) return;
+    const ok = await confirmDialog(`Delete host "${host.name}"?`, {
+      okText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
 
     const net = config.networks.find((n) => n.id === activeNetworkId);
     if (!net) return;
@@ -2458,7 +2515,7 @@
     saveConfig();
   };
 
-  el("editor-delete").onclick = () => {
+  el("editor-delete").onclick = async () => {
     if (!editorTarget) return;
 
     if (editorType === "host") {
@@ -2467,7 +2524,11 @@
         return;
       }
 
-      if (!confirm(`Delete host "${editorTarget.name}"?`)) return;
+      const ok = await confirmDialog(`Delete host "${editorTarget.name}"?`, {
+        okText: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
 
       const net = config.networks.find((n) => n.id === activeNetworkId);
       const target = net.hosts.find((h) => h.id === editorTarget.id);
@@ -2480,7 +2541,11 @@
         return;
       }
 
-      if (!confirm(`Delete network "${editorTarget.name}"?`)) return;
+      const ok = await confirmDialog(`Delete network "${editorTarget.name}"?`, {
+        okText: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
 
       editorTarget.deleted = true;
 
@@ -2494,7 +2559,10 @@
 
   el("editor-cancel").onclick = closeEditor;
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeEditor();
+    if (e.key === "Escape") {
+      if (isVisible("confirm-modal") || isVisible("prompt-modal")) return;
+      closeEditor();
+    }
   });
 
   /* ===================== Script editor ===================== */
@@ -2576,9 +2644,13 @@
     saveConfig();
   };
 
-  el("script-delete").onclick = () => {
+  el("script-delete").onclick = async () => {
     if (!scriptEditorTarget) return;
-    if (!confirm(`Delete script "${scriptEditorTarget.name}"?`)) return;
+    const ok = await confirmDialog(`Delete script "${scriptEditorTarget.name}"?`, {
+      okText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     scriptEditorTarget.deleted = true;
     closeScriptEditor();
     saveConfig();
@@ -2897,7 +2969,7 @@
       remove.textContent = "Remove";
       remove.disabled = !isAdmin;
       remove.classList.toggle("hidden", !isAdmin);
-      remove.onclick = () => {
+      remove.onclick = async () => {
         if (!team || !isAdmin) return;
         if (member.role === "admin") {
           const adminCount = (team.members || []).filter(
@@ -2908,6 +2980,11 @@
             return;
           }
         }
+        const ok = await confirmDialog(
+          `Remove ${member.name || member.email || "member"} from "${team.name || "team"}"?`,
+          { okText: "Remove", danger: true }
+        );
+        if (!ok) return;
         team.members = (team.members || []).filter(
           (m) => normalizeEmail(m.email) !== normalizeEmail(member.email)
         );
@@ -2996,12 +3073,14 @@
     renderProfileSection();
   };
 
-  el("btn-team-create").onclick = () => {
+  el("btn-team-create").onclick = async () => {
     if (!userEmail()) {
       notifyWarn("Set your profile email before creating a team.");
       return;
     }
-    const name = prompt("Team name?");
+    const name = await promptDialog("Team name:", "", {
+      okText: "Create team",
+    });
     if (!name) return;
     const members = [];
     const email = userEmail();
@@ -3021,10 +3100,14 @@
     saveConfig();
   };
 
-  el("team-delete").onclick = () => {
+  el("team-delete").onclick = async () => {
     const team = getTeamById(activeTeamDetailId || "");
     if (!team || !isTeamAdmin(team)) return;
-    if (!confirm(`Delete team "${team.name}"?`)) return;
+    const ok = await confirmDialog(`Delete team "${team.name}"?`, {
+      okText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     team.deleted = true;
     activeTeamDetailId = null;
     saveConfig();
@@ -3117,6 +3200,34 @@
 
   el("confirm-cancel").onclick = () => closeConfirm(false);
   el("confirm-ok").onclick = () => closeConfirm(true);
+  el("prompt-cancel").onclick = () => closePrompt(null);
+  el("prompt-ok").onclick = () => closePrompt(el("prompt-input")?.value ?? "");
+  const promptInput = el("prompt-input");
+  if (promptInput) {
+    promptInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        closePrompt(promptInput.value ?? "");
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closePrompt(null);
+      }
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (isVisible("prompt-modal")) {
+      e.preventDefault();
+      e.stopPropagation();
+      closePrompt(null);
+      return;
+    }
+    if (isVisible("confirm-modal")) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeConfirm(false);
+    }
+  });
 
   /* ===================== Config ===================== */
 
@@ -3284,12 +3395,11 @@
       );
 
     el("btn-import").onclick = async () => {
-      if (
-        !confirm(
-          "Import will overwrite your current config.\nA backup will be created automatically.\n\nContinue?"
-        )
-      )
-        return;
+      const ok = await confirmDialog(
+        "Import will overwrite your current config.\nA backup will be created automatically.\n\nContinue?",
+        { okText: "Import", danger: true }
+      );
+      if (!ok) return;
 
       try {
         const r = await rpc({ type: "config_import_pick" });

@@ -19,7 +19,7 @@ PTERMINAL_GOCACHE := $(CACHE_ROOT)/go-build
 PTERMINAL_GOMODCACHE := $(CACHE_ROOT)/go-mod
 PTERMINAL_PKGCONFIG := $(CACHE_ROOT)/pkgconfig
 
-.PHONY: build run clean assets fmt vet release portable flatpak
+.PHONY: build run clean assets fmt vet release portable flatpak publish-docker
 
 build:
 	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
@@ -89,3 +89,6 @@ flatpak:
 	@test -f internal/ui/assets/vendor/xterm.js || (echo "Missing xterm assets. Run: make assets" && exit 1)
 	@mkdir -p dist
 	@scripts/ci/flatpak_build.sh
+
+publish-docker:
+	@bash scripts/docker/push_image.sh
