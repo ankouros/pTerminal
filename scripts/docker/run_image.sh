@@ -52,6 +52,15 @@ dl_dir="${XDG_DOWNLOAD_DIR:-${home}/Downloads}"
 mkdir -p "${cfg_dir}" || true
 mkdir -p "${dl_dir}" || true
 
+if [[ ! -w "${cfg_dir}" ]]; then
+  echo "Warning: ${cfg_dir} is not writable for $(id -un). If it was created by root, run:" >&2
+  echo "  sudo chown -R $(id -u):$(id -g) ${cfg_dir}" >&2
+fi
+if [[ ! -w "${dl_dir}" ]]; then
+  echo "Warning: ${dl_dir} is not writable for $(id -un). If it was created by root, run:" >&2
+  echo "  sudo chown -R $(id -u):$(id -g) ${dl_dir}" >&2
+fi
+
 docker_args=(
   --rm
   --shm-size=512m

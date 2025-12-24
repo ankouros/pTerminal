@@ -10,3 +10,4 @@ release
 scripts/node_modules
 scripts/docker/.env
 **/.env
+AGENTS.md

@@ -160,6 +160,18 @@ docker run --rm \
   ankouros/pterminal:latest
 ```
 
+If you run manually, pass your UID:GID so config files are not owned by root:
+
+```bash
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -e DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v "$HOME/.config/pterminal:/home/pterminal/.config/pterminal" \
+  -v "$HOME/Downloads:/home/pterminal/Downloads" \
+  ankouros/pterminal:latest
+```
+
 ## Development workflow
 
 - `make assets` – refresh xterm.js + addons in `internal/ui/assets/vendor/`

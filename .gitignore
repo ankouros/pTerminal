@@ -13,3 +13,4 @@ dist/
 # Local Docker credentials/env (do not commit)
 .env
 scripts/docker/.env
+AGENTS.md
