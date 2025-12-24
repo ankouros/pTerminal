@@ -28,6 +28,98 @@
         }[m])
     );
 
+  let toastSeq = 0;
+
+  function notify(message, type = "info", opts = {}) {
+    const text = String(message || "").trim();
+    if (!text) return;
+    let container = el("toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "toast-container";
+      container.className = "toast-container";
+      container.setAttribute("aria-live", "polite");
+      container.setAttribute("aria-atomic", "false");
+      if (document.body) {
+        document.body.appendChild(container);
+      }
+    }
+    if (!container) {
+      alert(text);
+      return;
+    }
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    toast.dataset.toastId = String(++toastSeq);
+
+    const body = document.createElement("div");
+    body.className = "toast-body";
+    body.textContent = text;
+
+    const close = document.createElement("button");
+    close.className = "toast-close";
+    close.type = "button";
+    close.textContent = "x";
+
+    const dismiss = () => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 160);
+    };
+
+    close.onclick = dismiss;
+
+    toast.appendChild(body);
+    toast.appendChild(close);
+    container.appendChild(toast);
+
+    while (container.children.length > 5) {
+      container.firstElementChild?.remove();
+    }
+
+    requestAnimationFrame(() => toast.classList.add("show"));
+
+    const ttl =
+      typeof opts.ttl === "number"
+        ? opts.ttl
+        : type === "error"
+        ? 6000
+        : 4000;
+    if (ttl > 0) {
+      setTimeout(dismiss, ttl);
+    }
+  }
+
+  const notifyInfo = (msg, opts) => notify(msg, "info", opts);
+  const notifySuccess = (msg, opts) => notify(msg, "success", opts);
+  const notifyWarn = (msg, opts) => notify(msg, "warn", opts);
+  const notifyError = (msg, opts) => notify(msg, "error", opts);
+
+  let confirmResolver = null;
+
+  function confirmDialog(message, opts = {}) {
+    return new Promise((resolve) => {
+      confirmResolver = resolve;
+      el("confirm-message").textContent = String(message || "").trim();
+      el("confirm-ok").textContent = opts.okText || "Confirm";
+      el("confirm-cancel").textContent = opts.cancelText || "Cancel";
+      el("confirm-ok").classList.toggle("danger", !!opts.danger);
+      el("confirm-modal").classList.remove("hidden");
+    });
+  }
+
+  function closeConfirm(result) {
+    const modal = el("confirm-modal");
+    if (modal) modal.classList.add("hidden");
+    if (confirmResolver) {
+      const resolve = confirmResolver;
+      confirmResolver = null;
+      resolve(result);
+    }
+  }
+
   const textEncoder = new TextEncoder();
   const textDecoder = new TextDecoder();
 
@@ -71,6 +163,7 @@
   let profileDirty = false;
   let profileEditing = false;
   const requestStatusCache = new Map();
+  let requestStatusBootstrapped = false;
 
   const hostTerminals = new Map(); // hostId -> { tabs, tabOrder, tabNames, activeTabId, nextTabId, lastState }
   let activePane = null;
@@ -131,6 +224,45 @@
 
   function isTeamAdmin(team) {
     return teamRole(team, userEmail()) === "admin";
+  }
+
+  function checkRequestNotifications(cfg) {
+    const email = normalizeEmail(cfg?.user?.email || "");
+    if (!email) {
+      requestStatusBootstrapped = true;
+      return;
+    }
+
+    (cfg?.teams || []).forEach((team) => {
+      if (!team || team.deleted || !team.id) return;
+      const req = (team.requests || []).find(
+        (r) => normalizeEmail(r.email) === email
+      );
+      const status = req?.status || "";
+      const key = `${team.id}:${email}`;
+      const prev = requestStatusCache.get(key);
+
+      if (
+        requestStatusBootstrapped &&
+        prev === "pending" &&
+        (status === "approved" || status === "declined")
+      ) {
+        const msg = `Team request ${status}: ${team.name || "team"}`;
+        if (status === "approved") {
+          notifySuccess(msg);
+        } else {
+          notifyWarn(msg);
+        }
+      }
+
+      if (status) {
+        requestStatusCache.set(key, status);
+      } else {
+        requestStatusCache.delete(key);
+      }
+    });
+
+    requestStatusBootstrapped = true;
   }
 
   function findTeamRequest(team, email) {
@@ -831,7 +963,7 @@
           })
           .catch((e) => {
             cleanup();
-            alert(e.detail || e.error || "Failed to trust host");
+            notifyError(e.detail || e.error || "Failed to trust host");
             reject(e);
           });
       };
@@ -1085,7 +1217,7 @@
         const to = `${it.path.replace(/\/+$/, "")}/${from.split("/").pop()}`;
         sftpRpc(activeHostId, { type: "sftp_mv", from, to })
           .then(() => refreshFiles(activeHostId))
-          .catch((err) => alert(err.detail || err.error || "Move failed"));
+          .catch((err) => notifyError(err.detail || err.error || "Move failed"));
       });
 
       frag.appendChild(tr);
@@ -1175,7 +1307,7 @@
     const entry = ensureFilePane(hostId);
     if (!entry.selectedPath) return;
     const r = await sftpRpc(hostId, { type: "sftp_download", path: entry.selectedPath });
-    if (r.localPath) alert(`Downloaded to:\n${r.localPath}`);
+    if (r.localPath) notifySuccess(`Downloaded to:\n${r.localPath}`);
   }
 
   function abToB64(buf) {
@@ -1272,7 +1404,7 @@
           refreshFiles(hostId).catch(() => {});
         })
         .catch((e) => {
-          alert(e.detail || e.error || "Save failed");
+          notifyError(e.detail || e.error || "Save failed");
         })
         .finally(() => {
           if (fileEditState) fileEditState.saving = false;
@@ -1578,7 +1710,7 @@
   function deleteHostFromConfig(host) {
     if (!host) return;
     if (host.id === activeHostId) {
-      alert("Disconnect before deleting this host.");
+      notifyWarn("Disconnect before deleting this host.");
       return;
     }
     if (!confirm(`Delete host "${host.name}"?`)) return;
@@ -1828,7 +1960,7 @@
   function runScript(script) {
     if (!script?.command) return;
     if (!activeHostId || !activeTermTabId) {
-      alert("Select a host before running a script.");
+      notifyWarn("Select a host before running a script.");
       return;
     }
     queueInput(script.command + "\r");
@@ -1872,10 +2004,10 @@
 
       rpc(req)
         .then(() => scheduleStatePoll(150))
-        .catch((err) => alert(err.detail || err.error || "Connection failed"));
+        .catch((err) => notifyError(err.detail || err.error || "Connection failed"));
     } catch (e) {
       console.error("CONNECT ERROR", e);
-      alert("Unexpected connection error.");
+      notifyError("Unexpected connection error.");
     }
   }
 
@@ -1893,7 +2025,7 @@
       // Keep file UI state but force terminal tab (SFTP session is closed on backend).
       setActiveTab("terminal");
     } catch (e) {
-      alert(e.detail || e.error || "Failed to disconnect");
+      notifyError(e.detail || e.error || "Failed to disconnect");
     }
   }
 
@@ -2331,7 +2463,7 @@
 
     if (editorType === "host") {
       if (editorTarget.id === activeHostId) {
-        alert("Disconnect before deleting this host.");
+        notifyWarn("Disconnect before deleting this host.");
         return;
       }
 
@@ -2344,7 +2476,7 @@
 
     if (editorType === "network") {
       if ((editorTarget.hosts || []).some((h) => !h.deleted)) {
-        alert("Delete all hosts in this network first.");
+        notifyWarn("Delete all hosts in this network first.");
         return;
       }
 
@@ -2595,14 +2727,16 @@
     if (team && !isMember) {
       const req = findTeamRequest(team, currentEmail);
       const status = req?.status || "";
-      const statusText =
-        status === "approved"
-          ? "Request approved"
-          : status === "declined"
-          ? "Request declined"
-          : req
-          ? "Request pending"
-          : "";
+      let statusText = "";
+      if (req) {
+        if (status === "approved") {
+          statusText = "Request approved. Click Request access to rejoin.";
+        } else if (status === "declined") {
+          statusText = "Request declined. You can request access again.";
+        } else {
+          statusText = "Request pending";
+        }
+      }
 
       if (requestStatus) {
         const hint = isValidEmail(currentEmail)
@@ -2615,36 +2749,14 @@
       }
 
       const canRequest =
-        isValidEmail(currentEmail) && (!req || req.status === "declined");
+        isValidEmail(currentEmail) && (!req || req.status !== "pending");
       if (requestBtn) {
         requestBtn.disabled = !canRequest;
-      }
-
-      if (req) {
-        const key = `${team.id}:${normalizeEmail(currentEmail)}`;
-        const nextStatus = req.status || "pending";
-        const prev = requestStatusCache.get(key);
-        if (prev && prev !== nextStatus && nextStatus !== "pending") {
-          alert(`Team request ${nextStatus}: ${team.name || "team"}`);
-        }
-        requestStatusCache.set(key, nextStatus);
       }
 
       requestRow?.classList.remove("hidden");
     } else {
       requestRow?.classList.add("hidden");
-    }
-
-    if (team && isMember) {
-      const req = findTeamRequest(team, currentEmail);
-      if (req && req.status === "approved") {
-        const key = `${team.id}:${normalizeEmail(currentEmail)}`;
-        const prev = requestStatusCache.get(key);
-        if (prev && prev !== req.status) {
-          alert(`Team request approved: ${team.name || "team"}`);
-        }
-        requestStatusCache.set(key, req.status);
-      }
     }
 
     if (requestsRow) {
@@ -2763,7 +2875,7 @@
               (m) => m.role === "admin"
             ).length;
             if (adminCount <= 1 && member.role === "admin") {
-              alert("Each team must have at least one admin.");
+              notifyWarn("Each team must have at least one admin.");
               select.value = "admin";
               return;
             }
@@ -2792,7 +2904,7 @@
             (m) => m.role === "admin"
           ).length;
           if (adminCount <= 1) {
-            alert("Each team must have at least one admin.");
+            notifyWarn("Each team must have at least one admin.");
             return;
           }
         }
@@ -2860,7 +2972,7 @@
 
   el("profile-save").onclick = () => {
     if (!isValidEmail(el("profile-email").value)) {
-      alert("Enter a valid email address.");
+      notifyWarn("Enter a valid email address.");
       return;
     }
     config.user = config.user || {};
@@ -2886,7 +2998,7 @@
 
   el("btn-team-create").onclick = () => {
     if (!userEmail()) {
-      alert("Set your profile email before creating a team.");
+      notifyWarn("Set your profile email before creating a team.");
       return;
     }
     const name = prompt("Team name?");
@@ -2934,7 +3046,7 @@
     saveConfig();
   };
 
-  el("team-leave").onclick = () => {
+  el("team-leave").onclick = async () => {
     const team = getTeamById(activeTeamDetailId || "");
     if (!team || !isUserInTeam(team)) return;
     if (isTeamAdmin(team)) {
@@ -2942,11 +3054,11 @@
         (m) => m.role === "admin"
       ).length;
       if (adminCount <= 1) {
-        if (
-          !confirm(
-            `You are the last admin. Leaving will delete "${team.name || "team"}". Continue?`
-          )
-        ) {
+        const ok = await confirmDialog(
+          `You are the last admin. Leaving will delete "${team.name || "team"}". Continue?`,
+          { okText: "Delete team", danger: true }
+        );
+        if (!ok) {
           return;
         }
         team.deleted = true;
@@ -2955,7 +3067,11 @@
         return;
       }
     }
-    if (!confirm(`Leave team "${team.name || "team"}"?`)) return;
+    const ok = await confirmDialog(`Leave team "${team.name || "team"}"?`, {
+      okText: "Leave",
+      danger: true,
+    });
+    if (!ok) return;
     team.members = (team.members || []).filter(
       (m) => normalizeEmail(m.email) !== userEmail()
     );
@@ -2972,14 +3088,14 @@
     if (!team || isUserInTeam(team)) return;
     const email = userEmail();
     if (!isValidEmail(email)) {
-      alert("Set a valid email in your profile before requesting access.");
+      notifyWarn("Set a valid email in your profile before requesting access.");
       return;
     }
     team.requests = team.requests || [];
     const existing = findTeamRequest(team, email);
     const now = Math.floor(Date.now() / 1000);
     if (existing) {
-      if (existing.status !== "declined") {
+      if (existing.status === "pending") {
         return;
       }
       existing.status = "pending";
@@ -2999,18 +3115,22 @@
     saveConfig();
   };
 
+  el("confirm-cancel").onclick = () => closeConfirm(false);
+  el("confirm-ok").onclick = () => closeConfirm(true);
+
   /* ===================== Config ===================== */
 
   function saveConfig() {
     rpc({ type: "config_save", config })
       .then(loadConfig)
-      .catch((e) => alert(e.detail || e.error || "Failed to save config"));
+      .catch((e) => notifyError(e.detail || e.error || "Failed to save config"));
   }
 
   function loadConfig() {
     rpc({ type: "config_get" })
       .then((res) => {
         config = res.config;
+        checkRequestNotifications(config);
         if (pendingTeamName) {
           const found = (config.teams || []).find(
             (t) => (t.name || "") === pendingTeamName
@@ -3024,11 +3144,14 @@
         renderScripts();
         if (teamsModalOpen) renderTeamsModal();
       })
-      .catch((e) => alert("Failed to load config: " + (e.detail || e.error)));
+      .catch((e) =>
+        notifyError("Failed to load config: " + (e.detail || e.error))
+      );
   }
 
   window.__applyConfig = (cfg) => {
     config = cfg;
+    checkRequestNotifications(config);
     renderTeamSelect();
     renderNetworks();
     renderHosts();
@@ -3147,7 +3270,7 @@
 
     el("btn-add-host").onclick = () => {
       if (!activeNetworkId) {
-        alert("Select a network first.");
+        notifyWarn("Select a network first.");
         return;
       }
       openEditor("host", "create");
@@ -3157,7 +3280,7 @@
 
     el("btn-export").onclick = () =>
       rpc({ type: "config_export" }).then((r) =>
-        alert(`Config exported to:\n${r.path}`)
+        notifySuccess(`Config exported to:\n${r.path}`)
       );
 
     el("btn-import").onclick = async () => {
@@ -3183,9 +3306,9 @@
           `Imported:\n${r.importPath || ""}`.trim(),
           r.backupPath ? `\nBackup:\n${r.backupPath}` : "",
         ].join("");
-        if (msg.trim()) alert(msg.trim());
+        if (msg.trim()) notifyInfo(msg.trim(), { ttl: 7000 });
       } catch (e) {
-        alert(e.detail || e.error || "Import failed");
+        notifyError(e.detail || e.error || "Import failed");
       }
     };
 
@@ -3271,7 +3394,7 @@
       hideFileMenu();
       if (!t?.hostId || !t.path || !t.isDir) return;
       navigateTo(t.hostId, t.path).catch((e) =>
-        alert(e.detail || e.error || "Open failed")
+        notifyError(e.detail || e.error || "Open failed")
       );
     };
     el("file-menu-edit").onclick = () => {
@@ -3279,7 +3402,7 @@
       hideFileMenu();
       if (!t?.hostId || !t.path || t.isDir) return;
       openFileEditor(t.hostId, t.path).catch((e) =>
-        alert(e.detail || e.error || "Edit failed")
+        notifyError(e.detail || e.error || "Edit failed")
       );
     };
     el("file-menu-download").onclick = () => {
@@ -3289,7 +3412,7 @@
       const entry = ensureFilePane(t.hostId);
       entry.selectedPath = t.path;
       downloadSelected(t.hostId).catch((e) =>
-        alert(e.detail || e.error || "Download failed")
+        notifyError(e.detail || e.error || "Download failed")
       );
     };
     el("file-menu-upload").onclick = () => {
@@ -3305,7 +3428,7 @@
       const hostId = t?.hostId || activeHostId;
       if (!hostId) return;
       createFolder(hostId).catch((e) =>
-        alert(e.detail || e.error || "Create folder failed")
+        notifyError(e.detail || e.error || "Create folder failed")
       );
     };
     el("file-menu-rename").onclick = () => {
@@ -3315,7 +3438,7 @@
       const entry = ensureFilePane(t.hostId);
       entry.selectedPath = t.path;
       renameSelected(t.hostId).catch((e) =>
-        alert(e.detail || e.error || "Rename failed")
+        notifyError(e.detail || e.error || "Rename failed")
       );
     };
     el("file-menu-delete").onclick = () => {
@@ -3325,7 +3448,7 @@
       const entry = ensureFilePane(t.hostId);
       entry.selectedPath = t.path;
       deleteSelected(t.hostId).catch((e) =>
-        alert(e.detail || e.error || "Delete failed")
+        notifyError(e.detail || e.error || "Delete failed")
       );
     };
     el("file-menu-copy-path").onclick = () => {
