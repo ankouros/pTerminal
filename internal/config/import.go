@@ -46,6 +46,7 @@ func ImportFromFile(path string) (cfg model.AppConfig, backupPath string, err er
 	_ = normalizeUser(&cfg)
 	_ = normalizeTeams(&cfg)
 	_ = normalizeTeamMembers(&cfg)
+	_ = normalizeTeamRequests(&cfg)
 	_ = normalizeUIDs(&cfg)
 	_ = normalizeScopes(&cfg)
 	_ = dedupePersonalNetworks(&cfg)

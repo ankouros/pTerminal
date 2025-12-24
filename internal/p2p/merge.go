@@ -479,6 +479,7 @@ func mergeTeams(local, remote []model.Team, changed bool) ([]model.Team, bool) {
 			r.ID = model.NewID()
 		}
 		if l, ok := localMap[r.ID]; ok {
+			base := l
 			cmp := compareVersion(l.Version, r.Version, l.UpdatedAt, r.UpdatedAt)
 			switch cmp {
 			case versionLess:
@@ -488,6 +489,11 @@ func mergeTeams(local, remote []model.Team, changed bool) ([]model.Team, bool) {
 				merged := mergeTeamMembers(l, r)
 				l.Members = merged
 				l.Conflict = true
+				changed = true
+			}
+			mergedReq := mergeTeamRequests(base, r)
+			if !requestsEqual(l.Requests, mergedReq) {
+				l.Requests = mergedReq
 				changed = true
 			}
 			localMap[r.ID] = l
@@ -705,7 +711,9 @@ func teamCoreEqual(a, b model.Team) bool {
 	}
 	am := normalizeMembers(a.Members)
 	bm := normalizeMembers(b.Members)
-	return reflect.DeepEqual(am, bm)
+	ar := normalizeRequests(a.Requests)
+	br := normalizeRequests(b.Requests)
+	return reflect.DeepEqual(am, bm) && reflect.DeepEqual(ar, br)
 }
 
 func normalizeMembers(members []model.TeamMember) []model.TeamMember {
@@ -760,6 +768,97 @@ func mergeTeamMembers(a, b model.Team) []model.TeamMember {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
 	return out
+}
+
+func requestsEqual(a, b []model.TeamJoinRequest) bool {
+	return reflect.DeepEqual(normalizeRequests(a), normalizeRequests(b))
+}
+
+func normalizeRequests(reqs []model.TeamJoinRequest) []model.TeamJoinRequest {
+	byEmail := map[string]model.TeamJoinRequest{}
+	for _, r := range reqs {
+		email := strings.ToLower(strings.TrimSpace(r.Email))
+		if email == "" {
+			continue
+		}
+		r.Email = email
+		r.Name = strings.TrimSpace(r.Name)
+		switch r.Status {
+		case model.TeamJoinPending, model.TeamJoinApproved, model.TeamJoinDeclined:
+		default:
+			r.Status = model.TeamJoinPending
+		}
+		if existing, ok := byEmail[email]; ok {
+			byEmail[email] = pickJoinRequest(existing, r)
+		} else {
+			byEmail[email] = r
+		}
+	}
+	out := make([]model.TeamJoinRequest, 0, len(byEmail))
+	for _, r := range byEmail {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
+	return out
+}
+
+func mergeTeamRequests(a, b model.Team) []model.TeamJoinRequest {
+	byEmail := map[string]model.TeamJoinRequest{}
+	for _, r := range normalizeRequests(a.Requests) {
+		if r.Email != "" {
+			byEmail[r.Email] = r
+		}
+	}
+	for _, r := range normalizeRequests(b.Requests) {
+		if r.Email == "" {
+			continue
+		}
+		if existing, ok := byEmail[r.Email]; ok {
+			byEmail[r.Email] = pickJoinRequest(existing, r)
+		} else {
+			byEmail[r.Email] = r
+		}
+	}
+	out := make([]model.TeamJoinRequest, 0, len(byEmail))
+	for _, r := range byEmail {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
+	return out
+}
+
+func pickJoinRequest(a, b model.TeamJoinRequest) model.TeamJoinRequest {
+	aResolved := a.Status != model.TeamJoinPending
+	bResolved := b.Status != model.TeamJoinPending
+	if aResolved && !bResolved {
+		return a
+	}
+	if bResolved && !aResolved {
+		return b
+	}
+
+	at := joinRequestUpdatedAt(a)
+	bt := joinRequestUpdatedAt(b)
+	if bt > at {
+		return b
+	}
+	if at > bt {
+		return a
+	}
+	if a.Status == model.TeamJoinApproved && b.Status == model.TeamJoinDeclined {
+		return a
+	}
+	if b.Status == model.TeamJoinApproved && a.Status == model.TeamJoinDeclined {
+		return b
+	}
+	return a
+}
+
+func joinRequestUpdatedAt(r model.TeamJoinRequest) int64 {
+	if r.Status != model.TeamJoinPending && r.ResolvedAt > 0 {
+		return r.ResolvedAt
+	}
+	return r.RequestedAt
 }
 
 func scriptCoreEqual(a, b model.TeamScript) bool {

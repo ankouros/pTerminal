@@ -70,6 +70,7 @@
   let activeTeamDetailId = null;
   let profileDirty = false;
   let profileEditing = false;
+  const requestStatusCache = new Map();
 
   const hostTerminals = new Map(); // hostId -> { tabs, tabOrder, tabNames, activeTabId, nextTabId, lastState }
   let activePane = null;
@@ -103,6 +104,12 @@
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
+  function newLocalId() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
   function userEmail() {
     return normalizeEmail(config?.user?.email || "");
   }
@@ -124,6 +131,14 @@
 
   function isTeamAdmin(team) {
     return teamRole(team, userEmail()) === "admin";
+  }
+
+  function findTeamRequest(team, email) {
+    const norm = normalizeEmail(email);
+    if (!norm) return null;
+    return (team?.requests || []).find(
+      (r) => normalizeEmail(r.email) === norm
+    );
   }
 
   function visibleTeams() {
@@ -2544,6 +2559,8 @@
   function renderTeamDetail() {
     const team = getTeamById(activeTeamDetailId || "");
     const isAdmin = !!team && isTeamAdmin(team);
+    const isMember = !!team && isUserInTeam(team);
+    const currentEmail = userEmail();
     el("team-name").value = team?.name || "";
     el("team-name-display").textContent = team?.name || "";
     el("team-id").textContent = team?.id || "";
@@ -2554,6 +2571,163 @@
     el("team-name").readOnly = !isAdmin;
     el("team-name").classList.toggle("hidden", !isAdmin);
     el("team-name-display").classList.toggle("hidden", isAdmin);
+
+    const requestRow = el("team-request-row");
+    const requestStatus = el("team-request-status");
+    const requestBtn = el("team-request-access");
+    const requestsRow = el("team-requests-row");
+    const requestsContainer = el("team-requests");
+
+    if (!team) {
+      requestRow?.classList.add("hidden");
+      requestsRow?.classList.add("hidden");
+    }
+
+    if (requestStatus) {
+      requestStatus.textContent = "";
+      requestStatus.className = "team-request-status";
+    }
+    if (requestBtn) {
+      requestBtn.classList.remove("hidden");
+      requestBtn.disabled = true;
+    }
+
+    if (team && !isMember) {
+      const req = findTeamRequest(team, currentEmail);
+      const status = req?.status || "";
+      const statusText =
+        status === "approved"
+          ? "Request approved"
+          : status === "declined"
+          ? "Request declined"
+          : req
+          ? "Request pending"
+          : "";
+
+      if (requestStatus) {
+        const hint = isValidEmail(currentEmail)
+          ? "Request access to join this team."
+          : "Set a valid email in your profile to request access.";
+        requestStatus.textContent = statusText || hint;
+        if (status) {
+          requestStatus.classList.add(status);
+        }
+      }
+
+      const canRequest = isValidEmail(currentEmail) && !req;
+      if (requestBtn) {
+        requestBtn.disabled = !canRequest;
+      }
+
+      if (req) {
+        const key = `${team.id}:${normalizeEmail(currentEmail)}`;
+        const nextStatus = req.status || "pending";
+        const prev = requestStatusCache.get(key);
+        if (prev && prev !== nextStatus && nextStatus !== "pending") {
+          alert(`Team request ${nextStatus}: ${team.name || "team"}`);
+        }
+        requestStatusCache.set(key, nextStatus);
+      }
+
+      requestRow?.classList.remove("hidden");
+    } else {
+      requestRow?.classList.add("hidden");
+    }
+
+    if (team && isMember) {
+      const req = findTeamRequest(team, currentEmail);
+      if (req && req.status === "approved") {
+        const key = `${team.id}:${normalizeEmail(currentEmail)}`;
+        const prev = requestStatusCache.get(key);
+        if (prev && prev !== req.status) {
+          alert(`Team request approved: ${team.name || "team"}`);
+        }
+        requestStatusCache.set(key, req.status);
+      }
+    }
+
+    if (requestsRow) {
+      if (!team || !isAdmin) {
+        requestsRow.classList.add("hidden");
+      } else {
+        requestsRow.classList.remove("hidden");
+      }
+    }
+    if (requestsContainer) {
+      requestsContainer.innerHTML = "";
+    }
+
+    if (team && isAdmin && requestsContainer) {
+      const pending = (team.requests || []).filter((r) => r.status === "pending");
+      if (!pending.length) {
+        const empty = document.createElement("div");
+        empty.className = "team-member-status";
+        empty.textContent = "No pending requests.";
+        requestsContainer.appendChild(empty);
+      } else {
+        pending.forEach((req) => {
+          const row = document.createElement("div");
+          row.className = "team-request-row";
+
+          const info = document.createElement("div");
+          info.className = "team-request-info";
+          const label = document.createElement("div");
+          label.textContent = req.name || req.email || "Unknown";
+          const meta = document.createElement("div");
+          meta.className = "team-member-status";
+          meta.textContent = req.email || "";
+          info.appendChild(label);
+          info.appendChild(meta);
+
+          const actions = document.createElement("div");
+          actions.className = "team-request-actions";
+
+          const approve = document.createElement("button");
+          approve.className = "btn small";
+          approve.textContent = "Approve";
+          approve.onclick = () => {
+            if (!team) return;
+            const now = Math.floor(Date.now() / 1000);
+            const target = (team.requests || []).find((r) => r.id === req.id);
+            if (target) {
+              target.status = "approved";
+              target.resolvedAt = now;
+              target.resolvedBy = currentEmail || "";
+            }
+            team.members = team.members || [];
+            if (!team.members.some((m) => normalizeEmail(m.email) === normalizeEmail(req.email))) {
+              team.members.push({
+                email: req.email,
+                name: req.name || "",
+                role: "user",
+              });
+            }
+            saveConfig();
+          };
+
+          const decline = document.createElement("button");
+          decline.className = "btn small secondary";
+          decline.textContent = "Decline";
+          decline.onclick = () => {
+            if (!team) return;
+            const now = Math.floor(Date.now() / 1000);
+            const target = (team.requests || []).find((r) => r.id === req.id);
+            if (target) {
+              target.status = "declined";
+              target.resolvedAt = now;
+              target.resolvedBy = currentEmail || "";
+            }
+            saveConfig();
+          };
+
+          actions.appendChild(approve);
+          actions.appendChild(decline);
+          row.appendChild(info);
+          row.appendChild(actions);
+          requestsContainer.appendChild(row);
+        });
+      }
+    }
 
     const members = el("team-members");
     members.innerHTML = "";
@@ -2747,6 +2921,28 @@
     team.members.push({ name, email, role: "user" });
     el("team-member-name").value = "";
     el("team-member-email").value = "";
+    saveConfig();
+  };
+
+  el("team-request-access").onclick = () => {
+    const team = getTeamById(activeTeamDetailId || "");
+    if (!team || isUserInTeam(team)) return;
+    const email = userEmail();
+    if (!isValidEmail(email)) {
+      alert("Set a valid email in your profile before requesting access.");
+      return;
+    }
+    if (findTeamRequest(team, email)) {
+      return;
+    }
+    team.requests = team.requests || [];
+    team.requests.push({
+      id: newLocalId(),
+      email: email,
+      name: config?.user?.name || "",
+      status: "pending",
+      requestedAt: Math.floor(Date.now() / 1000),
+    });
     saveConfig();
   };
 

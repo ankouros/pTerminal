@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -180,6 +181,9 @@ func loadLocked() (model.AppConfig, error) {
 	if normalizeTeamMembers(&cfg) {
 		changed = true
 	}
+	if normalizeTeamRequests(&cfg) {
+		changed = true
+	}
 	if normalizeUIDs(&cfg) {
 		changed = true
 	}
@@ -274,6 +278,91 @@ func normalizeTeamMembers(cfg *model.AppConfig) bool {
 		}
 	}
 	return changed
+}
+
+func normalizeTeamRequests(cfg *model.AppConfig) bool {
+	changed := false
+	for i := range cfg.Teams {
+		t := &cfg.Teams[i]
+		if len(t.Requests) == 0 {
+			continue
+		}
+
+		byEmail := map[string]model.TeamJoinRequest{}
+		for _, req := range t.Requests {
+			email := strings.ToLower(strings.TrimSpace(req.Email))
+			if email == "" {
+				changed = true
+				continue
+			}
+			req.Email = email
+			req.Name = strings.TrimSpace(req.Name)
+			if req.ID == "" {
+				req.ID = model.NewID()
+				changed = true
+			}
+			switch req.Status {
+			case model.TeamJoinPending, model.TeamJoinApproved, model.TeamJoinDeclined:
+			default:
+				req.Status = model.TeamJoinPending
+				changed = true
+			}
+
+			if existing, ok := byEmail[email]; ok {
+				byEmail[email] = pickJoinRequest(existing, req)
+			} else {
+				byEmail[email] = req
+			}
+		}
+
+		normalized := make([]model.TeamJoinRequest, 0, len(byEmail))
+		for _, req := range byEmail {
+			normalized = append(normalized, req)
+		}
+		sort.Slice(normalized, func(i, j int) bool {
+			return normalized[i].Email < normalized[j].Email
+		})
+
+		if !reflect.DeepEqual(t.Requests, normalized) {
+			t.Requests = normalized
+			changed = true
+		}
+	}
+	return changed
+}
+
+func pickJoinRequest(a, b model.TeamJoinRequest) model.TeamJoinRequest {
+	aResolved := a.Status != model.TeamJoinPending
+	bResolved := b.Status != model.TeamJoinPending
+	if aResolved && !bResolved {
+		return a
+	}
+	if bResolved && !aResolved {
+		return b
+	}
+
+	at := joinRequestUpdatedAt(a)
+	bt := joinRequestUpdatedAt(b)
+	if bt > at {
+		return b
+	}
+	if at > bt {
+		return a
+	}
+	if a.Status == model.TeamJoinApproved && b.Status == model.TeamJoinDeclined {
+		return a
+	}
+	if b.Status == model.TeamJoinApproved && a.Status == model.TeamJoinDeclined {
+		return b
+	}
+	return a
+}
+
+func joinRequestUpdatedAt(r model.TeamJoinRequest) int64 {
+	if r.Status != model.TeamJoinPending && r.ResolvedAt > 0 {
+		return r.ResolvedAt
+	}
+	return r.RequestedAt
 }
 
 func containsTeamID(seen map[string]struct{}, id string) bool {

@@ -896,6 +896,46 @@ html, body {
   color: var(--text-success);
 }
 
+.team-request-status {
+  font-size: 12px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.team-request-status.pending {
+  color: var(--text-muted);
+}
+
+.team-request-status.approved {
+  color: var(--text-success);
+}
+
+.team-request-status.declined {
+  color: #ff9aa7;
+}
+
+.team-request-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  margin-bottom: 6px;
+}
+
+.team-request-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.team-request-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .teams-actions {
   margin-top: 10px;
   justify-content: flex-start;
