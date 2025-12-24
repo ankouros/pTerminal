@@ -761,6 +761,11 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 
 	w.startIOLoops()
 	w.startPTYFlushLoop()
+	if softwareRenderEnabled() {
+		w.wv.Dispatch(func() {
+			w.wv.Eval("window.__notifySoftwareRender && window.__notifySoftwareRender();")
+		})
+	}
 	return w, nil
 }
 
@@ -771,12 +776,16 @@ func (w *Window) ApplyConfig(cfg model.AppConfig) {
 		w.p2p.SetConfig(cfg)
 	}
 
+	sw := softwareRenderEnabled()
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		return
 	}
 	w.wv.Dispatch(func() {
 		w.wv.Eval("window.__applyConfig(" + string(b) + ");")
+		if sw {
+			w.wv.Eval("window.__notifySoftwareRender && window.__notifySoftwareRender();")
+		}
 	})
 }
 

@@ -79,6 +79,8 @@ fi
 if [[ "${force_software_render}" == "true" ]]; then
   docker_args+=(--env LIBGL_ALWAYS_SOFTWARE=1)
   docker_args+=(--env WEBKIT_DISABLE_COMPOSITING_MODE=1)
+  docker_args+=(--env MESA_LOADER_DRIVER_OVERRIDE=llvmpipe)
+  docker_args+=(--env GALLIUM_DRIVER=llvmpipe)
 fi
 
 # Preserve host group memberships inside the container so device permissions

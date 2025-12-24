@@ -181,7 +181,8 @@
 
   /* ===================== State ===================== */
 
-  let config = null;
+  let config = { user: {}, teams: [], scripts: [], networks: [] };
+  let configLoaded = false;
   let activeTeamId = "";
   let activeNetworkId = null;
   let activeHostId = null;
@@ -1857,6 +1858,7 @@
   }
 
   function renderTeamSelect() {
+    if (!config) return;
     const sel = el("team-select");
     if (!sel) return;
 
@@ -1881,6 +1883,7 @@
   }
 
   function renderNetworks() {
+    if (!config) return;
     const sel = el("network-select");
     sel.innerHTML = "";
     const frag = document.createDocumentFragment();
@@ -1905,6 +1908,7 @@
   }
 
   function renderHosts() {
+    if (!config) return;
     const container = el("hosts");
     container.innerHTML = "";
     const frag = document.createDocumentFragment();
@@ -1962,6 +1966,7 @@
   }
 
   function renderScripts() {
+    if (!config) return;
     const container = el("scripts");
     if (!container) return;
     container.innerHTML = "";
@@ -2204,6 +2209,10 @@
   }
 
   function openEditor(type, mode, target = null) {
+    if (!configLoaded) {
+      notifyWarn("Config is still loading. Please try again.");
+      return;
+    }
     editorType = type;
     editorMode = mode;
     editorTarget = target;
@@ -2568,6 +2577,10 @@
   /* ===================== Script editor ===================== */
 
   function openScriptEditor(mode, target = null) {
+    if (!configLoaded) {
+      notifyWarn("Config is still loading. Please try again.");
+      return;
+    }
     scriptEditorMode = mode;
     scriptEditorTarget = target;
 
@@ -2663,6 +2676,10 @@
   let teamsPresenceTimer = null;
 
   function openTeamsModal() {
+    if (!configLoaded) {
+      notifyWarn("Config is still loading. Please try again.");
+      return;
+    }
     teamsModalOpen = true;
     el("teams-modal").classList.remove("hidden");
     profileDirty = false;
@@ -3232,6 +3249,10 @@
   /* ===================== Config ===================== */
 
   function saveConfig() {
+    if (!configLoaded) {
+      notifyWarn("Config is still loading. Please try again.");
+      return;
+    }
     rpc({ type: "config_save", config })
       .then(loadConfig)
       .catch((e) => notifyError(e.detail || e.error || "Failed to save config"));
@@ -3240,7 +3261,12 @@
   function loadConfig() {
     rpc({ type: "config_get" })
       .then((res) => {
+        if (!res || !res.config) {
+          notifyError("Failed to load config.");
+          return;
+        }
         config = res.config;
+        configLoaded = true;
         checkRequestNotifications(config);
         if (pendingTeamName) {
           const found = (config.teams || []).find(
@@ -3261,7 +3287,9 @@
   }
 
   window.__applyConfig = (cfg) => {
+    if (!cfg) return;
     config = cfg;
+    configLoaded = true;
     checkRequestNotifications(config);
     renderTeamSelect();
     renderNetworks();
@@ -3269,6 +3297,15 @@
     renderScripts();
     if (teamsModalOpen) renderTeamsModal();
   };
+
+  window.__notifySoftwareRender = (() => {
+    let shown = false;
+    return () => {
+      if (shown) return;
+      shown = true;
+      notifyWarn("Software rendering enabled (GPU acceleration unavailable).");
+    };
+  })();
 
   function resetTerminals() {
     hostTerminals.forEach((state) => {
