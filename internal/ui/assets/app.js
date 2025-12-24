@@ -227,6 +227,22 @@
     return String(email || "").trim().toLowerCase();
   }
 
+  function normalizeConfig(cfg) {
+    const out = cfg && typeof cfg === "object" ? cfg : {};
+    if (!out.user || typeof out.user !== "object") out.user = {};
+    if (!Array.isArray(out.teams)) out.teams = [];
+    if (!Array.isArray(out.scripts)) out.scripts = [];
+    if (!Array.isArray(out.networks)) out.networks = [];
+    out.networks.forEach((net) => {
+      if (!Array.isArray(net.hosts)) net.hosts = [];
+    });
+    out.teams.forEach((team) => {
+      if (!Array.isArray(team.members)) team.members = [];
+      if (!Array.isArray(team.requests)) team.requests = [];
+    });
+    return out;
+  }
+
   function isValidEmail(email) {
     const value = String(email || "").trim();
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -1773,7 +1789,7 @@
     });
     if (!ok) return;
 
-    const net = config.networks.find((n) => n.id === activeNetworkId);
+    const net = (config.networks || []).find((n) => n.id === activeNetworkId);
     if (!net) return;
     const target = net.hosts.find((h) => h.id === host.id);
     if (target) target.deleted = true;
@@ -3265,7 +3281,7 @@
           notifyError("Failed to load config.");
           return;
         }
-        config = res.config;
+        config = normalizeConfig(res.config);
         configLoaded = true;
         checkRequestNotifications(config);
         if (pendingTeamName) {
@@ -3288,7 +3304,7 @@
 
   window.__applyConfig = (cfg) => {
     if (!cfg) return;
-    config = cfg;
+    config = normalizeConfig(cfg);
     configLoaded = true;
     checkRequestNotifications(config);
     renderTeamSelect();
@@ -3443,7 +3459,7 @@
         if (r.canceled) return;
 
         resetTerminals();
-        config = r.config;
+        config = normalizeConfig(r.config);
         renderTeamSelect();
         renderNetworks();
         renderHosts();

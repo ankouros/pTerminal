@@ -88,9 +88,8 @@ fi
 
 if [[ "${snap_docker}" == "true" && "${gpu_requested}" == "false" ]]; then
   force_software_render=true
-  docker_args+=(--env GSETTINGS_BACKEND=memory)
 fi
-if [[ "${PTERMINAL_DISABLE_GSETTINGS:-}" == "1" ]]; then
+if [[ "${PTERMINAL_GSETTINGS:-}" != "1" ]]; then
   docker_args+=(--env GSETTINGS_BACKEND=memory)
 fi
 
@@ -204,9 +203,20 @@ fi
 pull_one() {
   local img="$1"
   local label="$2"
+  local updated_var="$3"
+  local before
+  local after
+
+  before="$(docker image inspect --format '{{index .RepoDigests 0}}' "${img}" 2>/dev/null || true)"
 
   if docker pull "${img}" >/dev/null 2>&1; then
-    echo "Pulled (${label}): ${img}"
+    after="$(docker image inspect --format '{{index .RepoDigests 0}}' "${img}" 2>/dev/null || true)"
+    if [[ -n "${after}" && "${after}" != "${before}" ]]; then
+      printf -v "${updated_var}" "true"
+      echo "Pulled (${label}): ${img} (updated)"
+    else
+      echo "Pulled (${label}): ${img}"
+    fi
     return 0
   fi
   echo "Could not pull (${label}): ${img}" >&2
@@ -225,12 +235,20 @@ have_local() {
 
 best_image=""
 best_created=""
+ghcr_updated=false
+hub_updated=false
 
 pulled_any=false
-if pull_one "${ghcr_image}" "ghcr"; then pulled_any=true; fi
-if pull_one "${hub_image}" "dockerhub"; then pulled_any=true; fi
+if pull_one "${ghcr_image}" "ghcr" ghcr_updated; then pulled_any=true; fi
+if pull_one "${hub_image}" "dockerhub" hub_updated; then pulled_any=true; fi
 
-if have_local "${ghcr_image}"; then
+if [[ "${ghcr_updated}" == "true" && "${hub_updated}" != "true" ]]; then
+  best_image="${ghcr_image}"
+elif [[ "${hub_updated}" == "true" && "${ghcr_updated}" != "true" ]]; then
+  best_image="${hub_image}"
+fi
+
+if [[ -z "${best_image}" ]] && have_local "${ghcr_image}"; then
   c="$(inspect_created "${ghcr_image}")"
   if [[ -n "${c}" ]]; then
     best_image="${ghcr_image}"
@@ -238,10 +256,25 @@ if have_local "${ghcr_image}"; then
   fi
 fi
 
-if have_local "${hub_image}"; then
+if [[ -z "${best_image}" ]] && have_local "${hub_image}"; then
   c="$(inspect_created "${hub_image}")"
   if [[ -n "${c}" ]]; then
-    if [[ -z "${best_created}" || "${c}" > "${best_created}" ]]; then
+    best_image="${hub_image}"
+    best_created="${c}"
+  fi
+fi
+
+if [[ -n "${best_image}" && -n "${best_created}" ]]; then
+  if have_local "${ghcr_image}"; then
+    c="$(inspect_created "${ghcr_image}")"
+    if [[ -n "${c}" && "${c}" > "${best_created}" ]]; then
+      best_image="${ghcr_image}"
+      best_created="${c}"
+    fi
+  fi
+  if have_local "${hub_image}"; then
+    c="$(inspect_created "${hub_image}")"
+    if [[ -n "${c}" && "${c}" > "${best_created}" ]]; then
       best_image="${hub_image}"
       best_created="${c}"
     fi
