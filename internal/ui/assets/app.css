@@ -1009,6 +1009,37 @@ html, body {
   margin-top: 8px;
 }
 
+.teams-profile-display {
+  display: block;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  background: rgba(10,12,16,0.4);
+}
+
+.teams-profile-display .profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.teams-profile-display .profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.teams-profile-display .profile-line {
+  font-size: 14px;
+}
+
+.teams-profile-display .profile-label {
+  font-weight: 700;
+  margin-right: 6px;
+}
+
 .path-row {
   display: flex;
   gap: 10px;
@@ -1026,4 +1057,8 @@ html, body {
 .form-group input:focus {
   outline: none;
   border-color: rgba(90,167,255,0.6);
+}
+
+.teams-profile-row input.invalid {
+  border-color: rgba(255, 107, 125, 0.6);
 }

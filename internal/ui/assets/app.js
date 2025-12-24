@@ -69,6 +69,7 @@
   let teamsModalOpen = false;
   let activeTeamDetailId = null;
   let profileDirty = false;
+  let profileEditing = false;
 
   const hostTerminals = new Map(); // hostId -> { tabs, tabOrder, tabNames, activeTabId, nextTabId, lastState }
   let activePane = null;
@@ -95,6 +96,11 @@
 
   function normalizeEmail(email) {
     return String(email || "").trim().toLowerCase();
+  }
+
+  function isValidEmail(email) {
+    const value = String(email || "").trim();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
   function userEmail() {
@@ -2443,12 +2449,14 @@
     profileDirty = false;
     el("profile-name").value = config?.user?.name || "";
     el("profile-email").value = config?.user?.email || "";
+    profileEditing = !isValidEmail(el("profile-email").value);
     if (!activeTeamDetailId) {
       activeTeamDetailId = (config?.teams || []).find((t) => !t.deleted)?.id || null;
     }
     refreshTeamRepoPaths();
     refreshTeamPresence();
     renderTeamsModal();
+    renderProfileSection();
     if (!teamsPresenceTimer) {
       teamsPresenceTimer = setInterval(refreshTeamPresence, 4000);
     }
@@ -2499,6 +2507,7 @@
     if (!teamsModalOpen) return;
     renderTeamsList();
     renderTeamDetail();
+    renderProfileSection();
   }
 
   function renderTeamsList() {
@@ -2632,6 +2641,30 @@
     el("team-copy-path").disabled = !repoPath;
   }
 
+  function renderProfileSection() {
+    const name = config?.user?.name || "";
+    const email = config?.user?.email || "";
+    const hasValidEmail = isValidEmail(email);
+    const showDisplay = hasValidEmail && !profileEditing;
+
+    el("profile-name-text").textContent = name || "—";
+    el("profile-email-text").textContent = email || "—";
+
+    el("profile-display")?.classList.toggle("hidden", !showDisplay);
+    el("profile-form")?.classList.toggle("hidden", showDisplay);
+    el("profile-label")?.classList.toggle("hidden", showDisplay);
+
+    const emailInput = el("profile-email");
+    if (emailInput) {
+      emailInput.classList.toggle("invalid", emailInput.value && !isValidEmail(emailInput.value));
+    }
+
+    const saveBtn = el("profile-save");
+    if (saveBtn) {
+      saveBtn.disabled = !isValidEmail(emailInput?.value || "");
+    }
+  }
+
   el("teams-close").onclick = closeTeamsModal;
   el("btn-teams").onclick = openTeamsModal;
   el("team-copy-path").onclick = () => {
@@ -2642,18 +2675,30 @@
   };
 
   el("profile-save").onclick = () => {
+    if (!isValidEmail(el("profile-email").value)) {
+      alert("Enter a valid email address.");
+      return;
+    }
     config.user = config.user || {};
     config.user.name = el("profile-name").value.trim();
     config.user.email = el("profile-email").value.trim();
     profileDirty = false;
+    profileEditing = false;
     saveConfig();
+    renderProfileSection();
   };
 
   ["profile-name", "profile-email"].forEach((id) =>
     el(id)?.addEventListener("input", () => {
       profileDirty = true;
+      renderProfileSection();
     })
   );
+
+  el("profile-edit").onclick = () => {
+    profileEditing = true;
+    renderProfileSection();
+  };
 
   el("btn-team-create").onclick = () => {
     if (!userEmail()) {

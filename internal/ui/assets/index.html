@@ -193,8 +193,17 @@
 
       <div class="modal-body teams-body">
         <div class="teams-profile">
-          <div class="label">Your profile</div>
-          <div class="teams-profile-row">
+          <div class="label" id="profile-label">Your profile</div>
+          <div id="profile-display" class="teams-profile-display hidden">
+            <div class="profile-row">
+              <div class="profile-info">
+                <div class="profile-line"><span class="profile-label">Name:</span> <span id="profile-name-text"></span></div>
+                <div class="profile-line"><span class="profile-label">Email:</span> <span id="profile-email-text"></span></div>
+              </div>
+              <button id="profile-edit" class="btn small secondary">Edit</button>
+            </div>
+          </div>
+          <div id="profile-form" class="teams-profile-row">
             <input id="profile-name" type="text" placeholder="Name" />
             <input id="profile-email" type="email" placeholder="Email" />
             <button id="profile-save" class="btn small primary">Save</button>
