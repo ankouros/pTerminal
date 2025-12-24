@@ -2614,7 +2614,8 @@
         }
       }
 
-      const canRequest = isValidEmail(currentEmail) && !req;
+      const canRequest =
+        isValidEmail(currentEmail) && (!req || req.status === "declined");
       if (requestBtn) {
         requestBtn.disabled = !canRequest;
       }
@@ -2813,6 +2814,15 @@
     el("team-save").classList.toggle("hidden", !isAdmin);
     el("team-delete").classList.toggle("hidden", !isAdmin);
     el("team-copy-path").disabled = !repoPath;
+
+    const leaveBtn = el("team-leave");
+    if (leaveBtn) {
+      const isMemberBtn = !!team && isMember;
+      leaveBtn.classList.toggle("hidden", !isMemberBtn);
+      if (isMemberBtn) {
+        leaveBtn.disabled = false;
+      }
+    }
   }
 
   function renderProfileSection() {
@@ -2924,6 +2934,39 @@
     saveConfig();
   };
 
+  el("team-leave").onclick = () => {
+    const team = getTeamById(activeTeamDetailId || "");
+    if (!team || !isUserInTeam(team)) return;
+    if (isTeamAdmin(team)) {
+      const adminCount = (team.members || []).filter(
+        (m) => m.role === "admin"
+      ).length;
+      if (adminCount <= 1) {
+        if (
+          !confirm(
+            `You are the last admin. Leaving will delete "${team.name || "team"}". Continue?`
+          )
+        ) {
+          return;
+        }
+        team.deleted = true;
+        activeTeamDetailId = null;
+        saveConfig();
+        return;
+      }
+    }
+    if (!confirm(`Leave team "${team.name || "team"}"?`)) return;
+    team.members = (team.members || []).filter(
+      (m) => normalizeEmail(m.email) !== userEmail()
+    );
+    if (team.requests) {
+      team.requests = team.requests.filter(
+        (r) => normalizeEmail(r.email) !== userEmail()
+      );
+    }
+    saveConfig();
+  };
+
   el("team-request-access").onclick = () => {
     const team = getTeamById(activeTeamDetailId || "");
     if (!team || isUserInTeam(team)) return;
@@ -2932,17 +2975,27 @@
       alert("Set a valid email in your profile before requesting access.");
       return;
     }
-    if (findTeamRequest(team, email)) {
-      return;
-    }
     team.requests = team.requests || [];
-    team.requests.push({
-      id: newLocalId(),
-      email: email,
-      name: config?.user?.name || "",
-      status: "pending",
-      requestedAt: Math.floor(Date.now() / 1000),
-    });
+    const existing = findTeamRequest(team, email);
+    const now = Math.floor(Date.now() / 1000);
+    if (existing) {
+      if (existing.status !== "declined") {
+        return;
+      }
+      existing.status = "pending";
+      existing.requestedAt = now;
+      existing.resolvedAt = 0;
+      existing.resolvedBy = "";
+      existing.name = config?.user?.name || existing.name || "";
+    } else {
+      team.requests.push({
+        id: newLocalId(),
+        email: email,
+        name: config?.user?.name || "",
+        status: "pending",
+        requestedAt: now,
+      });
+    }
     saveConfig();
   };
 

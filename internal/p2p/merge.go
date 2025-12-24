@@ -828,15 +828,6 @@ func mergeTeamRequests(a, b model.Team) []model.TeamJoinRequest {
 }
 
 func pickJoinRequest(a, b model.TeamJoinRequest) model.TeamJoinRequest {
-	aResolved := a.Status != model.TeamJoinPending
-	bResolved := b.Status != model.TeamJoinPending
-	if aResolved && !bResolved {
-		return a
-	}
-	if bResolved && !aResolved {
-		return b
-	}
-
 	at := joinRequestUpdatedAt(a)
 	bt := joinRequestUpdatedAt(b)
 	if bt > at {
@@ -845,11 +836,13 @@ func pickJoinRequest(a, b model.TeamJoinRequest) model.TeamJoinRequest {
 	if at > bt {
 		return a
 	}
-	if a.Status == model.TeamJoinApproved && b.Status == model.TeamJoinDeclined {
-		return a
-	}
-	if b.Status == model.TeamJoinApproved && a.Status == model.TeamJoinDeclined {
+	ap := joinRequestPriority(a.Status)
+	bp := joinRequestPriority(b.Status)
+	if bp > ap {
 		return b
+	}
+	if ap > bp {
+		return a
 	}
 	return a
 }
@@ -859,6 +852,19 @@ func joinRequestUpdatedAt(r model.TeamJoinRequest) int64 {
 		return r.ResolvedAt
 	}
 	return r.RequestedAt
+}
+
+func joinRequestPriority(status string) int {
+	switch status {
+	case model.TeamJoinApproved:
+		return 3
+	case model.TeamJoinPending:
+		return 2
+	case model.TeamJoinDeclined:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func scriptCoreEqual(a, b model.TeamScript) bool {
