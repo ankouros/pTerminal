@@ -133,6 +133,33 @@ Minimal example:
 - Portable tarballs for GitHub Releases are generated via `.github/workflows/release-portable.yml` (Ubuntu 24.04 base).
 - Docker image: use `scripts/docker/` helpers, running with host X11/Wayland for GUI display.
 
+If you run Docker manually on X11 and get “Authorization required” errors, pass XAUTHORITY:
+
+```bash
+xhost +local:docker
+docker run --rm \
+  -e DISPLAY \
+  -e XAUTHORITY=/tmp/.Xauthority \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v "$HOME/.Xauthority:/tmp/.Xauthority:ro" \
+  -v "$HOME/.config/pterminal:/home/pterminal/.config/pterminal" \
+  -v "$HOME/Downloads:/home/pterminal/Downloads" \
+  ankouros/pterminal:latest
+```
+
+Wayland example (recommended on GNOME/Wayland):
+
+```bash
+docker run --rm \
+  -e XDG_RUNTIME_DIR=/tmp/xdg-runtime \
+  -e WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} \
+  -e DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/xdg-runtime/bus \
+  -v "$XDG_RUNTIME_DIR:/tmp/xdg-runtime" \
+  -v "$HOME/.config/pterminal:/home/pterminal/.config/pterminal" \
+  -v "$HOME/Downloads:/home/pterminal/Downloads" \
+  ankouros/pterminal:latest
+```
+
 ## Development workflow
 
 - `make assets` – refresh xterm.js + addons in `internal/ui/assets/vendor/`

@@ -60,13 +60,41 @@ docker run --rm \
   ankouros/pterminal:latest
 ```
 
+If you see “Authorization required” errors on X11, pass XAUTHORITY explicitly:
+
+```
+xhost +local:docker
+docker run --rm \
+  -e DISPLAY \
+  -e XAUTHORITY=/tmp/.Xauthority \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v "$HOME/.Xauthority:/tmp/.Xauthority:ro" \
+  -v "$HOME/.config/pterminal:/home/pterminal/.config/pterminal" \
+  -v "$HOME/Downloads:/home/pterminal/Downloads" \
+  ankouros/pterminal:latest
+```
+
+Wayland example (recommended on GNOME/Wayland):
+
+```
+docker run --rm \
+  -e XDG_RUNTIME_DIR=/tmp/xdg-runtime \
+  -e WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} \
+  -e DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/xdg-runtime/bus \
+  -v "$XDG_RUNTIME_DIR:/tmp/xdg-runtime" \
+  -v "$HOME/.config/pterminal:/home/pterminal/.config/pterminal" \
+  -v "$HOME/Downloads:/home/pterminal/Downloads" \
+  ankouros/pterminal:latest
+```
+
 ## Persistence
 - Config lives in `~/.config/pterminal` on the host and is mounted into the container.
 - Downloads are stored in your host `~/Downloads` folder.
 
 ## Platform notes
 - Linux desktop only (Wayland or X11).
-- Requires GPU device access for best rendering (`/dev/dri` is passed by the script).
+- Docker runs with software rendering by default for compatibility.
+  Set `PTERMINAL_GPU=1` to try GPU acceleration.
 
 ## Security model
 - LAN discovery is unauthenticated; use on trusted networks.
@@ -75,4 +103,3 @@ docker run --rm \
 
 ## Links
 - Source: https://github.com/ankouros/pterminal
-

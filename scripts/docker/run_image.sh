@@ -65,10 +65,19 @@ docker_args=(
 )
 
 force_software_render=false
+gpu_requested=false
+
+if [[ "${PTERMINAL_GPU:-}" == "1" ]]; then
+  gpu_requested=true
+fi
+
 if [[ "${PTERMINAL_SOFTWARE_RENDER:-}" == "1" || "${PTERMINAL_DISABLE_GPU:-}" == "1" ]]; then
   force_software_render=true
+elif [[ "${gpu_requested}" == "false" ]]; then
+  force_software_render=true
 fi
-if [[ "${snap_docker}" == "true" && -z "${PTERMINAL_GPU:-}" ]]; then
+
+if [[ "${snap_docker}" == "true" && "${gpu_requested}" == "false" ]]; then
   force_software_render=true
   docker_args+=(--env GSETTINGS_BACKEND=memory)
 fi
@@ -77,6 +86,7 @@ if [[ "${PTERMINAL_DISABLE_GSETTINGS:-}" == "1" ]]; then
 fi
 
 if [[ "${force_software_render}" == "true" ]]; then
+  echo "Using software rendering (set PTERMINAL_GPU=1 to try GPU)." >&2
   docker_args+=(--env LIBGL_ALWAYS_SOFTWARE=1)
   docker_args+=(--env WEBKIT_DISABLE_COMPOSITING_MODE=1)
   docker_args+=(--env MESA_LOADER_DRIVER_OVERRIDE=llvmpipe)
