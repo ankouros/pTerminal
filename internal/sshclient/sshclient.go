@@ -364,6 +364,22 @@ func authMethod(
 		ag := agent.NewClient(conn)
 		return ssh.PublicKeysCallback(ag.Signers), func() { _ = conn.Close() }, nil
 
+	case model.AuthKeyboardInteractive:
+		if passwordProvider == nil {
+			return nil, nil, errors.New("password provider not set")
+		}
+		return ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+			answers := make([]string, len(questions))
+			for i := range questions {
+				ans, err := passwordProvider()
+				if err != nil {
+					return nil, err
+				}
+				answers[i] = ans
+			}
+			return answers, nil
+		}), nil, nil
+
 	default:
 		return nil, nil, fmt.Errorf("unknown auth method: %s", host.Auth.Method)
 	}

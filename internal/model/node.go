@@ -6,6 +6,7 @@ const (
 	AuthPassword AuthMethod = "password"
 	AuthKey      AuthMethod = "key"
 	AuthAgent    AuthMethod = "agent"
+	AuthKeyboardInteractive AuthMethod = "keyboard-interactive"
 )
 
 type HostKeyMode string

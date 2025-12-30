@@ -18,6 +18,7 @@ This guide covers the end-user workflow for pTerminal.
   - `password`
   - `key`
   - `agent`
+  - `keyboard-interactive`
 
 ## Host Keys
 

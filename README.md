@@ -114,7 +114,7 @@ Minimal example:
 
 ## Authentication & host keys
 
-- Auth methods defined in config: `password`, `key`, `agent` (UI wiring for key/agent is in progress but backend support exists).
+- Auth methods defined in config: `password`, `key`, `agent`, `keyboard-interactive`.
 - Host key modes: `known_hosts` (strict check) or `insecure` (development/testing only).
 - Unknown/changed host keys trigger a dialog in the UI; trusted keys are persisted via the Go backend.
 - SSH/SFTP passwords and key passphrases are kept in memory only and are not persisted to disk.

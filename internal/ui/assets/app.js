@@ -273,6 +273,16 @@
     return out;
   }
 
+  function needsSecretAuth(method) {
+    const m = method || "";
+    return m === "password" || m === "key" || m === "keyboard-interactive";
+  }
+
+  function needsPasswordPrompt(method) {
+    const m = method || "";
+    return m === "password" || m === "keyboard-interactive";
+  }
+
   function isValidEmail(email) {
     const value = String(email || "").trim();
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -1058,7 +1068,7 @@
     // If SFTP is set to reuse connection credentials, opportunistically include the password.
     const sftpMode = host.sftp?.credentials || "connection";
     const isCustom = sftpMode === "custom";
-    const needsConnPw = !isCustom && host.auth?.method === "password";
+    const needsConnPw = !isCustom && needsPasswordPrompt(host.auth?.method);
     const needsKeyPass = !isCustom && host.auth?.method === "key";
 
     const tryOnce = async (connPw, sftpPw) => {
@@ -1700,7 +1710,11 @@
         if (s.errCode === "password_required" && !passwordPrompted.has(hostId)) {
           const host = findHostById(hostId);
           const driver = host?.driver || "ssh";
-          if (host && driver === "ssh" && host.auth?.method === "password") {
+          if (
+            host &&
+            driver === "ssh" &&
+            needsPasswordPrompt(host.auth?.method)
+          ) {
             passwordPrompted.add(hostId);
             promptDialog(`Password for ${host.user}@${host.host}:`, "", {
               okText: "Connect",
@@ -2145,7 +2159,9 @@
       const size = await fitTerminalAndGetSize();
 
       const driver = host.driver || "ssh";
-      const secret = getRuntimePassword(host.id);
+      const authMethod = host.auth?.method || "password";
+      const needsSecret = needsSecretAuth(authMethod);
+      const secret = needsSecret ? getRuntimePassword(host.id) : "";
       const req = {
         type: "select",
         hostId: host.id,
@@ -2154,11 +2170,7 @@
         rows: size.rows,
         // 🔑 send stored password immediately if available
         passwordB64:
-          driver === "ssh" &&
-          (host.auth?.method === "password" || host.auth?.method === "key") &&
-          secret
-            ? b64enc(secret)
-            : "",
+          driver === "ssh" && needsSecret && secret ? b64enc(secret) : "",
       };
 
       rpc(req)
@@ -2579,7 +2591,11 @@
       const hostTeamId = hostScope === "team" ? el("host-team").value : "";
 
       const hostId = editorMode === "create" ? nextHostId() : editorTarget.id;
-      if (authMethod === "password" || authMethod === "key") {
+      if (
+        authMethod === "password" ||
+        authMethod === "key" ||
+        authMethod === "keyboard-interactive"
+      ) {
         setRuntimePassword(hostId, hostPassword);
       } else {
         setRuntimePassword(hostId, "");

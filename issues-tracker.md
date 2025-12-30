@@ -13,3 +13,4 @@ Track open issues, proposals, and implementation status for this repo.
 | PT-007 | maintainability | low | fixed | `internal/config/nodes.go` is unused legacy code. | `internal/config/nodes.go` |
 | PT-008 | feature | low | fixed | SSH key auth lacks passphrase support (only `ParsePrivateKey`). | `internal/sshclient/sshclient.go`, `internal/ui/assets/app.js` |
 | PT-009 | reliability | low | fixed | App shutdown does not explicitly disconnect SSH sessions. | `internal/ui/window.go` |
+| PT-010 | feature | low | fixed | Added keyboard-interactive SSH auth option with prompt support. | `internal/model/node.go`, `internal/sshclient/sshclient.go`, `internal/ui/assets/app.js`, `internal/ui/assets/index.html`, `docs/usage.md`, `README.md` |
