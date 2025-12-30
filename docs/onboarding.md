@@ -19,6 +19,10 @@ make build
 ./bin/pterminal
 ```
 
+## Optional automated install
+
+Run `sudo ./INSTALL.sh` to pull Go, GTK/WebKit, Node/npm, and git from the official repos, run the test suite, rebuild the executable, and install `/usr/local/bin/pterminal` plus the desktop icon.
+
 ## Run from Source
 
 ```bash

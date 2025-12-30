@@ -52,6 +52,14 @@ make assets
 
 Downloads `xterm.js`, CSS, and addons into `internal/ui/assets/vendor/` where they are embedded.
 
+### 1.5. Install dependencies (optional)
+
+```bash
+sudo ./INSTALL.sh
+```
+
+Runs `apt` against the official Ubuntu/Debian repositories to install Go, GTK/WebKit, Node/npm, and git, then tests, cleans, builds, and publishes a desktop icon so everything is ready to run.
+
 ### 2. Build & run
 
 ```bash
