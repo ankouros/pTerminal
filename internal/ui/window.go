@@ -971,6 +971,7 @@ func (w *Window) startPTYFlushLoop() {
 func (w *Window) startTray() {
 	trayInit(w)
 	installWindowCloseHandler(w.wv)
+	w.showFromTray()
 }
 
 func (w *Window) hideFromTray() {
