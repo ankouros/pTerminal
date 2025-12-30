@@ -175,6 +175,7 @@ docker run --rm \
 
 ## Development workflow
 
+- `make specs-update` – init/update the `samakia-specs` submodule
 - `make sync-contracts` – sync `CONTRACTS.md` from `samakia-specs`
 - `make assets` – refresh xterm.js + addons in `internal/ui/assets/vendor/`
 - `make build` – compile to `bin/pterminal`

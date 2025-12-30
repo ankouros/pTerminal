@@ -15,10 +15,16 @@ Run the sync target after updating the spec or when you pull new changes:
 make sync-contracts
 ```
 
-By default the sync reads from `/home/aggelos/samakia-specs`. Override with:
+By default the sync reads from the `specs/samakia-specs` submodule. Override with:
 
 ```bash
 SAMAKIA_SPECS_PATH=/path/to/samakia-specs make sync-contracts
+```
+
+If you need to initialize the submodule first:
+
+```bash
+make specs-update
 ```
 
 ## Updates

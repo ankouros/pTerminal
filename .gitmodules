@@ -1,0 +1,3 @@
+[submodule "specs/samakia-specs"]
+	path = specs/samakia-specs
+	url = git@github.com:ankouros/samakia-specs.git

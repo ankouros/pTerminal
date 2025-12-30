@@ -12,6 +12,7 @@ This guide covers setting up the repo for local development.
 ## Clone and Build
 
 ```bash
+make specs-update
 make sync-contracts
 make assets
 make build

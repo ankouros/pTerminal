@@ -15,3 +15,4 @@ Track open issues, proposals, and implementation status for this repo.
 | PT-009 | reliability | low | fixed | App shutdown does not explicitly disconnect SSH sessions. | `internal/ui/window.go` |
 | PT-010 | feature | low | fixed | Added keyboard-interactive SSH auth option with prompt support. | `internal/model/node.go`, `internal/sshclient/sshclient.go`, `internal/ui/assets/app.js`, `internal/ui/assets/index.html`, `docs/usage.md`, `README.md` |
 | PT-011 | maintainability | low | fixed | Repo contracts were not synced from `samakia-specs`; added sync script and docs. | `CONTRACTS.md`, `scripts/sync-contracts.sh`, `docs/contracts.md`, `README.md`, `ROADMAP.md` |
+| PT-012 | maintainability | low | fixed | Contracts were not actively tied to the specs repo; added `samakia-specs` submodule + sync workflow. | `.gitmodules`, `specs/samakia-specs`, `scripts/sync-contracts.sh`, `README.md`, `ROADMAP.md`, `docs/onboarding.md` |
