@@ -59,6 +59,26 @@ html, body {
   gap: 10px;
 }
 
+.update-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12px;
+}
+
+.update-text {
+  color: var(--text-accent);
+  white-space: nowrap;
+}
+
+.update-btn {
+  padding: 4px 6px;
+}
+
 #nav-brand {
   font-weight: 800;
   letter-spacing: 0.5px;

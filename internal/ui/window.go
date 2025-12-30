@@ -1,22 +1,28 @@
 package ui
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/ankouros/pterminal/internal/buildinfo"
 	"github.com/ankouros/pterminal/internal/config"
 	"github.com/ankouros/pterminal/internal/model"
 	"github.com/ankouros/pterminal/internal/p2p"
@@ -25,6 +31,7 @@ import (
 	"github.com/ankouros/pterminal/internal/sshclient"
 	"github.com/ankouros/pterminal/internal/teamrepo"
 	"github.com/ankouros/pterminal/internal/terminal"
+	"github.com/ankouros/pterminal/internal/update"
 	webview "github.com/webview/webview_go"
 	"golang.org/x/crypto/ssh"
 )
@@ -177,6 +184,10 @@ type Window struct {
 	resizeCh chan resizeMsg
 
 	windowHidden atomic.Bool
+	exePath      string
+
+	update   updateState
+	updateMu sync.Mutex
 }
 
 type pendingKey struct {
@@ -184,6 +195,78 @@ type pendingKey struct {
 	hostPort    string
 	fingerprint string
 	key         ssh.PublicKey
+}
+
+type updateState struct {
+	LatestTag    string
+	ReleaseURL   string
+	ReleaseNotes string
+	AssetName    string
+	AssetURL     string
+	HasUpdate    bool
+	Checking     bool
+	Installing   bool
+	Error        string
+	LastCheck    time.Time
+	InstalledTag string
+}
+
+func (w *Window) updatePayload() rpcResp {
+	w.updateMu.Lock()
+	defer w.updateMu.Unlock()
+
+	info := rpcResp{
+		"currentVersion": buildinfo.Version,
+		"latest":         w.update.LatestTag,
+		"releaseUrl":     w.update.ReleaseURL,
+		"notes":          w.update.ReleaseNotes,
+		"assetName":      w.update.AssetName,
+		"assetUrl":       w.update.AssetURL,
+		"hasUpdate":      w.update.HasUpdate,
+		"checking":       w.update.Checking,
+		"installing":     w.update.Installing,
+		"error":          w.update.Error,
+		"installedTag":   w.update.InstalledTag,
+	}
+	if !w.update.LastCheck.IsZero() {
+		info["lastCheck"] = w.update.LastCheck.Format(time.RFC3339)
+	}
+	return info
+}
+
+func isNewVersion(latest, current string) bool {
+	latest = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(latest)), "v")
+	current = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(current)), "v")
+	if latest == "" {
+		return false
+	}
+	if current == "" || current == "dev" {
+		return true
+	}
+	return latest != current
+}
+
+func selectUpdateAsset(goos string, assets []update.Asset) (update.Asset, bool) {
+	goos = strings.ToLower(goos)
+	for _, asset := range assets {
+		name := strings.ToLower(asset.Name)
+		if strings.Contains(name, goos) && strings.Contains(name, "portable") && (strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz")) {
+			return asset, true
+		}
+	}
+	for _, asset := range assets {
+		name := strings.ToLower(asset.Name)
+		if strings.Contains(name, "pterminal") && (strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz")) {
+			return asset, true
+		}
+	}
+	for _, asset := range assets {
+		name := strings.ToLower(asset.Name)
+		if strings.Contains(name, goos) {
+			return asset, true
+		}
+	}
+	return update.Asset{}, false
 }
 
 type inputMsg struct {
@@ -211,6 +294,8 @@ type rpcReq struct {
 	TabID  int `json:"tabId,omitempty"`
 	Cols   int `json:"cols,omitempty"`
 	Rows   int `json:"rows,omitempty"`
+
+	Force bool `json:"force,omitempty"`
 
 	DataB64         string `json:"dataB64,omitempty"`
 	PasswordB64     string `json:"passwordB64,omitempty"`
@@ -293,6 +378,11 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 		flushCh:      make(chan struct{}, 1),
 		inputCh:      make(chan inputMsg, 16384),
 		resizeCh:     make(chan resizeMsg, 256),
+	}
+	if exe, err := os.Executable(); err == nil {
+		w.exePath = exe
+	} else {
+		w.exePath = filepath.Join(".", "bin", "pterminal")
 	}
 
 	w.wv.SetTitle("pTerminal")
@@ -831,6 +921,20 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			}
 			return ok(rpcResp{"paths": paths})
 
+		case "update_status":
+			if req.Force {
+				w.triggerUpdateCheck(true)
+			}
+			return ok(rpcResp{"update": w.updatePayload()})
+
+		case "update_check":
+			w.triggerUpdateCheck(true)
+			return ok(rpcResp{"update": w.updatePayload()})
+
+		case "update_install":
+			go w.runUpdateInstall()
+			return ok(rpcResp{"update": w.updatePayload()})
+
 		default:
 			return fail("unknown_rpc", nil)
 		}
@@ -847,6 +951,7 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 		})
 	}
 	w.startTray()
+	w.triggerUpdateCheck(false)
 	return w, nil
 }
 
@@ -972,6 +1077,242 @@ func (w *Window) startTray() {
 	trayInit(w)
 	installWindowCloseHandler(w.wv)
 	w.showFromTray()
+}
+
+func (w *Window) triggerUpdateCheck(force bool) {
+	go w.runUpdateCheck(force)
+}
+
+func (w *Window) runUpdateCheck(force bool) {
+	w.updateMu.Lock()
+	if w.update.Checking && !force {
+		w.updateMu.Unlock()
+		return
+	}
+	w.update.Checking = true
+	w.update.Error = ""
+	w.updateMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	rel, err := update.Latest(ctx)
+	w.updateMu.Lock()
+	defer w.updateMu.Unlock()
+	w.update.Checking = false
+	if err != nil {
+		w.update.Error = err.Error()
+		return
+	}
+
+	w.update.LatestTag = rel.Tag
+	w.update.ReleaseURL = rel.HTMLURL
+	w.update.ReleaseNotes = rel.Body
+
+	if asset, ok := selectUpdateAsset(runtime.GOOS, rel.Assets); ok {
+		w.update.AssetName = asset.Name
+		w.update.AssetURL = asset.URL
+	} else {
+		w.update.AssetName = ""
+		w.update.AssetURL = ""
+	}
+
+	w.update.HasUpdate = rel.Tag != "" && isNewVersion(rel.Tag, buildinfo.Version) && !rel.Draft && !rel.Prerelease
+	if !w.update.HasUpdate {
+		w.update.AssetName = ""
+		w.update.AssetURL = ""
+	}
+
+	w.update.LastCheck = time.Now()
+}
+
+func (w *Window) runUpdateInstall() {
+	w.updateMu.Lock()
+	if w.update.Installing || w.update.AssetURL == "" {
+		w.update.Error = "no update asset available"
+		w.update.Installing = false
+		w.updateMu.Unlock()
+		return
+	}
+	w.update.Installing = true
+	w.update.Error = ""
+	assetURL := w.update.AssetURL
+	w.updateMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	path, err := downloadAsset(ctx, assetURL)
+	if err != nil {
+		w.setUpdateError(err.Error())
+		return
+	}
+	defer os.Remove(path)
+
+	binaryPath, err := extractPortableBinary(path)
+	if err != nil {
+		w.setUpdateError(err.Error())
+		return
+	}
+	defer os.Remove(binaryPath)
+
+	dest := w.exePath
+	if dest == "" {
+		dest = filepath.Join(".", "bin", "pterminal")
+	}
+
+	if err := installBinary(binaryPath, dest); err != nil {
+		w.setUpdateError(err.Error())
+		return
+	}
+
+	w.setUpdateInstalled()
+}
+
+func (w *Window) setUpdateError(msg string) {
+	w.updateMu.Lock()
+	w.update.Error = msg
+	w.update.Installing = false
+	w.updateMu.Unlock()
+	w.notifyUpdateError("Update failed: " + msg)
+}
+
+func (w *Window) setUpdateInstalled() {
+	w.updateMu.Lock()
+	w.update.Installing = false
+	w.update.HasUpdate = false
+	w.update.InstalledTag = w.update.LatestTag
+	w.updateMu.Unlock()
+	message := "Update installed (" + w.update.LatestTag + "). Restarting the app will run the new version."
+	w.notifyUpdateSuccess(message)
+}
+
+func downloadAsset(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected download status: %s", resp.Status)
+	}
+
+	tmp, err := os.CreateTemp("", "pterminal-update-*"+filepath.Ext(url))
+	if err != nil {
+		return "", err
+	}
+	defer tmp.Close()
+
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		return "", err
+	}
+
+	return tmp.Name(), nil
+}
+
+func extractPortableBinary(archivePath string) (string, error) {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", err
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+
+	tmpDir, err := os.MkdirTemp("", "pterminal-update-*")
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if filepath.Base(hdr.Name) != "pterminal" {
+			continue
+		}
+		dest := filepath.Join(tmpDir, "pterminal")
+		out, err := os.Create(dest)
+		if err != nil {
+			return "", err
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return "", err
+		}
+		out.Close()
+		if err := os.Chmod(dest, 0o755); err != nil {
+			return "", err
+		}
+		return dest, nil
+	}
+
+	return "", errors.New("pterminal binary not found in archive")
+}
+
+func installBinary(src, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if err := copyFile(src, dest); err != nil {
+		return err
+	}
+	return nil
+}
+
+func copyFile(src, dest string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Window) notifyUpdateSuccess(msg string) {
+	w.runJSNotify("notifySuccess", msg)
+}
+
+func (w *Window) notifyUpdateError(msg string) {
+	w.runJSNotify("notifyError", msg)
+}
+
+func (w *Window) runJSNotify(fn, msg string) {
+	if w.wv == nil {
+		return
+	}
+	quoted := strconv.Quote(msg)
+	w.wv.Dispatch(func() {
+		w.wv.Eval(fmt.Sprintf("%s(%s);", fn, quoted))
+	})
 }
 
 func (w *Window) hideFromTray() {

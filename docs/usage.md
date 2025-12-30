@@ -33,6 +33,7 @@ The CLI test suite (`go test ./internal/sshclient`) now runs `internal/sshclient
 - "Exit pTerminal" opens a confirmation dialog before shutting down the app.
 - Closing the main window only hides it to the tray so the icon/menu remain active; use the tray controls to reopen the UI or exit.
 - The tray menu now also includes an "About pTerminal" entry that pops up the embedded version, git commit, and build timestamp.
+- The navigation bar shows update status text plus “Check updates” / “Install update” buttons powered by GitHub releases so you can download/install the new portable bundle without manual downloads.
 
 ## Host Keys
 

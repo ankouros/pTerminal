@@ -198,6 +198,96 @@
   let activeTeamDetailId = null;
   let profileDirty = false;
   let profileEditing = false;
+  let updateInfo = {
+    checking: false,
+    installing: false,
+    hasUpdate: false,
+    latest: "",
+    assetName: "",
+    assetUrl: "",
+    error: "",
+  };
+  let lastUpdateError = "";
+
+  function setUpdateState(payload) {
+    const info = payload?.update || {};
+    updateInfo = {
+      checking: !!info.checking,
+      installing: !!info.installing,
+      hasUpdate: !!info.hasUpdate,
+      latest: info.latest || "",
+      assetName: info.assetName || "",
+      assetUrl: info.assetUrl || "",
+      error: info.error || "",
+    };
+    if (updateInfo.error && updateInfo.error !== lastUpdateError) {
+      lastUpdateError = updateInfo.error;
+      notifyError(updateInfo.error);
+    }
+    renderUpdateWidget();
+  }
+
+  function renderUpdateWidget() {
+    const widget = el("update-widget");
+    const text = el("update-text");
+    const checkBtn = el("btn-check-updates");
+    const installBtn = el("btn-install-update");
+    if (!widget || !text || !checkBtn || !installBtn) return;
+
+    if (updateInfo.checking) {
+      widget.classList.remove("hidden");
+      text.textContent = "Checking for updates…";
+      checkBtn.disabled = true;
+      installBtn.classList.add("hidden");
+      return;
+    }
+
+    if (updateInfo.hasUpdate) {
+      widget.classList.remove("hidden");
+      text.textContent = updateInfo.latest
+        ? `New version ${updateInfo.latest} available`
+        : "New version available";
+      checkBtn.disabled = false;
+      installBtn.classList.remove("hidden");
+      installBtn.disabled = updateInfo.installing;
+      installBtn.textContent = updateInfo.installing
+        ? "Installing…"
+        : `Install ${updateInfo.assetName || "update"}`;
+      return;
+    }
+
+    widget.classList.add("hidden");
+    checkBtn.disabled = false;
+    installBtn.classList.add("hidden");
+  }
+
+  async function refreshUpdateStatus(force = false) {
+    try {
+      const res = await rpc({ type: "update_status", force });
+      setUpdateState(res);
+    } catch (err) {
+      console.error("Update status failed", err);
+    }
+  }
+
+  async function requestUpdateCheck() {
+    try {
+      await rpc({ type: "update_check", force: true });
+    } catch (err) {
+      notifyError("Failed to check for updates.");
+    }
+    await refreshUpdateStatus(true);
+  }
+
+  async function requestUpdateInstall() {
+    try {
+      await rpc({ type: "update_install" });
+      notifyInfo("Installing update…");
+    } catch (err) {
+      notifyError("Failed to install update.");
+    }
+    await refreshUpdateStatus(true);
+  }
   const requestStatusCache = new Map();
   let requestStatusBootstrapped = false;
 
@@ -3630,6 +3720,23 @@
     el("about-copy-github").onclick = () =>
       writeClipboardText(el("about-github").textContent || "").catch(() => {});
 
+    const updateCheckBtn = el("btn-check-updates");
+    const updateInstallBtn = el("btn-install-update");
+    updateCheckBtn?.addEventListener("click", () => {
+      if (updateCheckBtn.disabled) return;
+      updateCheckBtn.disabled = true;
+      requestUpdateCheck().finally(() => {
+        updateCheckBtn.disabled = false;
+      });
+    });
+    updateInstallBtn?.addEventListener("click", () => {
+      if (updateInstallBtn.disabled) return;
+      updateInstallBtn.disabled = true;
+      requestUpdateInstall().finally(() => {
+        updateInstallBtn.disabled = false;
+      });
+    });
+
     el("btn-copy").onclick = () => copySelectionToClipboard().catch(() => {});
     el("btn-paste").onclick = () => pasteFromClipboard().catch(() => {});
     el("btn-clear").onclick = () => term?.clear?.();
@@ -3819,5 +3926,6 @@
     bindUI();
     loadConfig();
     updateTerminalActions();
+    refreshUpdateStatus();
   });
 })();
