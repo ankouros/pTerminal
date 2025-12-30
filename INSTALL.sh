@@ -18,12 +18,31 @@ PKGS=(
   libgtk-3-dev
   libwebkit2gtk-4.1-dev
   nodejs
-  npm
   git
 )
 
-echo "Installing dependencies: ${PKGS[*]}"
-apt-get install -y --no-install-recommends "${PKGS[@]}"
+PKGS_TO_INSTALL=()
+for pkg in "${PKGS[@]}"; do
+  if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+    echo "$pkg already installed"
+  else
+    PKGS_TO_INSTALL+=("$pkg")
+  fi
+done
+
+if [ "${#PKGS_TO_INSTALL[@]}" -gt 0 ]; then
+  echo "Installing dependencies: ${PKGS_TO_INSTALL[*]}"
+  apt-get install -y --no-install-recommends "${PKGS_TO_INSTALL[@]}"
+else
+  echo "All dependencies already satisfied via apt"
+fi
+
+if command -v npm >/dev/null; then
+  echo "npm is already available"
+else
+  echo "npm command is not currently available; nodejs packages from official repos typically include npm."
+  echo "If you need npm, install it manually (e.g., `apt-get install npm` after ensuring it does not conflict with nodejs)."
+fi
 
 cd "$SCRIPT_DIR"
 
