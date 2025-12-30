@@ -21,7 +21,7 @@ make build
 
 ## Optional automated install
 
-Run `sudo ./INSTALL.sh`; it installs Go, GTK/WebKit, Node (which typically provides `npm`), and git using the official repositories but skips already satisfied packages, then runs the test suite, rebuilds the executable, and installs `/usr/local/bin/pterminal` plus the desktop icon.
+Run `sudo ./INSTALL.sh`; it installs Go, GTK/WebKit, Node (which typically provides `npm`), and git using the official repositories but skips already satisfied packages, then runs the test suite, rebuilds the executable, installs `/usr/local/bin/pterminal`, and refreshes the icon cache so the desktop icon registers.
 
 ## Run from Source
 

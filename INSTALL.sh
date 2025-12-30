@@ -60,6 +60,12 @@ install -Dm755 ./bin/pterminal /usr/local/bin/pterminal
 
 echo "Installing desktop entry and icon..."
 install -Dm644 packaging/pterminal.desktop /usr/share/applications/pterminal.desktop
-install -Dm644 packaging/pterminal.svg /usr/share/icons/hicolor/256x256/apps/pterminal.svg
+ICON_THEME_DIR="/usr/share/icons/hicolor"
+install -Dm644 packaging/pterminal.svg "$ICON_THEME_DIR/256x256/apps/pterminal.svg"
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t "$ICON_THEME_DIR"
+else
+  echo "gtk-update-icon-cache not found; desktop icon cache not refreshed"
+fi
 
 echo "Done. You can launch pTerminal from the desktop menu or by running 'pterminal'."
