@@ -41,6 +41,8 @@ func (e ErrHostKeyMismatch) Error() string {
 	return "host key mismatch: " + e.HostPort + " (" + e.Fingerprint + ")"
 }
 
+var ErrPassphraseRequired = errors.New("passphrase_required")
+
 /*
 NodeSession
 */
@@ -331,7 +333,22 @@ func authMethod(
 		}
 		signer, err := ssh.ParsePrivateKey(b)
 		if err != nil {
-			return nil, nil, err
+			var missing *ssh.PassphraseMissingError
+			if errors.As(err, &missing) {
+				if passwordProvider == nil {
+					return nil, nil, ErrPassphraseRequired
+				}
+				pass, perr := passwordProvider()
+				if perr != nil || pass == "" {
+					return nil, nil, ErrPassphraseRequired
+				}
+				signer, err = ssh.ParsePrivateKeyWithPassphrase(b, []byte(pass))
+				if err != nil {
+					return nil, nil, err
+				}
+			} else {
+				return nil, nil, err
+			}
 		}
 		return ssh.PublicKeys(signer), nil, nil
 
@@ -357,6 +374,9 @@ Host key verification
 */
 
 func hostKeyCallback(host model.Host) (ssh.HostKeyCallback, error) {
+	if host.HostKey.Mode == model.HostKeyInsecure {
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
 	khPath := expandHome("~/.ssh/known_hosts")
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {

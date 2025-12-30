@@ -5,8 +5,8 @@ This document describes the LAN-only peer discovery and team sync behavior for p
 ## Scope
 
 - LAN-only (no WAN relay, no external service).
-- Best-effort, unauthenticated discovery and sync.
-- Zero configuration: pTerminal instances auto-discover on startup.
+- Authenticated + encrypted sync when `PTERMINAL_P2P_SECRET` is set.
+- If no secret is set, sync is disabled unless `PTERMINAL_P2P_INSECURE=1` is explicitly enabled.
 
 ## Discovery
 
@@ -17,6 +17,7 @@ This document describes the LAN-only peer discovery and team sync behavior for p
   - TCP sync port
   - team summaries (id + name)
 - Peers are considered active while announcements are seen within ~20 seconds.
+  - Announcements include an HMAC when a secret is configured.
 
 ## Sync Transport
 
@@ -28,6 +29,7 @@ This document describes the LAN-only peer discovery and team sync behavior for p
   - team repository manifests
 - Both sides exchange file payloads for team repositories using a request/response flow
   (only missing/newer files are sent).
+  - When `PTERMINAL_P2P_SECRET` is set, payloads are encrypted and authenticated.
 
 ## Team Repositories
 
@@ -62,5 +64,4 @@ This document describes the LAN-only peer discovery and team sync behavior for p
 ## Notes
 
 - All sync is best-effort; peers may join/leave at any time.
-- There is no authentication or encryption between peers (LAN trust assumed).
 - The sync protocol is designed to avoid data loss over speed.

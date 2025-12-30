@@ -161,6 +161,7 @@ type Window struct {
 	// per-host password cache (memory only)
 	pwMu    sync.RWMutex
 	pwCache map[int]string
+	sftpPw  map[int]string
 
 	activeHostID atomic.Int64
 	activeTabID  atomic.Int64
@@ -209,9 +210,10 @@ type rpcReq struct {
 	Cols   int `json:"cols,omitempty"`
 	Rows   int `json:"rows,omitempty"`
 
-	DataB64     string `json:"dataB64,omitempty"`
-	PasswordB64 string `json:"passwordB64,omitempty"`
-	Config      any    `json:"config,omitempty"`
+	DataB64         string `json:"dataB64,omitempty"`
+	PasswordB64     string `json:"passwordB64,omitempty"`
+	SftpPasswordB64 string `json:"sftpPasswordB64,omitempty"`
+	Config          any    `json:"config,omitempty"`
 
 	Path string `json:"path,omitempty"`
 	From string `json:"from,omitempty"`
@@ -233,6 +235,22 @@ func (w *Window) getCachedPassword(hostID int) string {
 func (w *Window) setCachedPassword(hostID int, pw string) {
 	w.pwMu.Lock()
 	w.pwCache[hostID] = pw
+	w.pwMu.Unlock()
+}
+
+func (w *Window) getCachedSFTPPassword(hostID int) string {
+	w.pwMu.RLock()
+	defer w.pwMu.RUnlock()
+	return w.sftpPw[hostID]
+}
+
+func (w *Window) setCachedSFTPPassword(hostID int, pw string) {
+	w.pwMu.Lock()
+	if pw == "" {
+		delete(w.sftpPw, hostID)
+	} else {
+		w.sftpPw[hostID] = pw
+	}
 	w.pwMu.Unlock()
 }
 
@@ -268,6 +286,7 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 		p2p:          p2pSvc,
 		pendingTrust: make(map[int]pendingKey),
 		pwCache:      make(map[int]string),
+		sftpPw:       make(map[int]string),
 		attached:     make(map[attachKey]terminal.Session),
 		flushCh:      make(chan struct{}, 1),
 		inputCh:      make(chan inputMsg, 16384),
@@ -289,6 +308,12 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 		if req.HostID != 0 && req.PasswordB64 != "" {
 			if pw, err := b64dec(req.PasswordB64); err == nil && pw != "" {
 				w.setCachedPassword(req.HostID, pw)
+			}
+		}
+		if req.HostID != 0 && req.SftpPasswordB64 != "" {
+			if pw, err := b64dec(req.SftpPasswordB64); err == nil && pw != "" {
+				w.setCachedSFTPPassword(req.HostID, pw)
+				w.sftp.SetCustomPassword(req.HostID, pw)
 			}
 		}
 
@@ -314,6 +339,7 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 				return fail("config_save_failed", nil)
 			}
 			updated, _ := p2p.ApplyLocalEdits(current, incoming)
+			_ = config.StripSecrets(&updated)
 			if err := config.Save(updated); err != nil {
 				return fail("config_save_failed", nil)
 			}
@@ -350,6 +376,7 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			w.pendingTrust = make(map[int]pendingKey)
 			w.pwMu.Lock()
 			w.pwCache = make(map[int]string)
+			w.sftpPw = make(map[int]string)
 			w.pwMu.Unlock()
 			w.activeHostID.Store(0)
 			w.activeTabID.Store(0)
@@ -375,6 +402,9 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			defer cancel()
 
 			entries, cwd, err := w.sftp.List(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
@@ -407,6 +437,9 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 						"fingerprint": mismatch.Fingerprint,
 					})
 				}
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				if err.Error() == "password_required" {
 					return fail("password_required", nil)
 				}
@@ -418,11 +451,17 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := w.sftp.MkdirAll(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			}); err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(nil)
@@ -431,11 +470,17 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := w.sftp.Remove(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			}); err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(nil)
@@ -444,11 +489,17 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := w.sftp.Rename(ctx, req.HostID, req.From, req.To, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			}); err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(nil)
@@ -457,12 +508,18 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			out, err := w.sftp.DownloadToDownloads(ctx, req.HostID, req.Path, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			})
 			if err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(rpcResp{"localPath": out})
@@ -471,12 +528,18 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			id, err := w.sftp.BeginUpload(ctx, req.HostID, req.Dir, req.Name, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			})
 			if err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(rpcResp{"uploadId": id})
@@ -511,12 +574,18 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			defer cancel()
 			const max = 2 * 1024 * 1024
 			b, err := w.sftp.ReadFile(ctx, req.HostID, req.Path, max, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			})
 			if err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(rpcResp{"dataB64": base64.StdEncoding.EncodeToString(b)})
@@ -532,11 +601,17 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := w.sftp.WriteFile(ctx, req.HostID, req.Path, data, func(hostID int) (string, error) {
+				if pw := w.getCachedSFTPPassword(hostID); pw != "" {
+					return pw, nil
+				}
 				if pw := w.getCachedPassword(hostID); pw != "" {
 					return pw, nil
 				}
 				return "", errors.New("password_required")
 			}); err != nil {
+				if errors.Is(err, sshclient.ErrPassphraseRequired) {
+					return fail("passphrase_required", nil)
+				}
 				return fail("sftp_failed", rpcResp{"detail": err.Error()})
 			}
 			return ok(nil)
@@ -703,6 +778,9 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 				if info.LastErr == "password_required" {
 					resp["errCode"] = "password_required"
 				}
+				if errors.Is(info.Err, sshclient.ErrPassphraseRequired) {
+					resp["errCode"] = "passphrase_required"
+				}
 			}
 
 			return ok(resp)
@@ -781,11 +859,13 @@ func (w *Window) ApplyConfig(cfg model.AppConfig) {
 	if err != nil {
 		return
 	}
+	notifyJS := ""
+	if sw {
+		notifyJS = "window.__notifySoftwareRender && window.__notifySoftwareRender();"
+	}
+	applyJS := fmt.Sprintf(`(function(){var cfg=%s;var tries=0;var apply=function(){if(window.__applyConfig){window.__applyConfig(cfg);%s}else if(tries<200){tries++;setTimeout(apply,50);}};apply();})();`, string(b), notifyJS)
 	w.wv.Dispatch(func() {
-		w.wv.Eval("window.__applyConfig(" + string(b) + ");")
-		if sw {
-			w.wv.Eval("window.__notifySoftwareRender && window.__notifySoftwareRender();")
-		}
+		w.wv.Eval(applyJS)
 	})
 }
 
@@ -1000,6 +1080,9 @@ func (w *Window) Close() {
 	}
 	if w.resizeCh != nil {
 		close(w.resizeCh)
+	}
+	if w.mgr != nil {
+		w.mgr.DisconnectAll()
 	}
 	if w.sftp != nil {
 		w.sftp.DisconnectAll()

@@ -50,6 +50,7 @@ func ImportFromFile(path string) (cfg model.AppConfig, backupPath string, err er
 	_ = normalizeUIDs(&cfg)
 	_ = normalizeScopes(&cfg)
 	_ = dedupePersonalNetworks(&cfg)
+	_ = StripSecrets(&cfg)
 
 	cfgPath, err := ensureDir()
 	if err != nil {

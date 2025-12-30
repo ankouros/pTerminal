@@ -46,15 +46,17 @@ type Manager struct {
 
 	cfg model.AppConfig
 
-	sessions map[int]*session
-	uploads  map[string]*upload
+	sessions        map[int]*session
+	uploads         map[string]*upload
+	customPasswords map[int]string
 }
 
 func NewManager(cfg model.AppConfig) *Manager {
 	return &Manager{
-		cfg:      cfg,
-		sessions: make(map[int]*session),
-		uploads:  make(map[string]*upload),
+		cfg:             cfg,
+		sessions:        make(map[int]*session),
+		uploads:         make(map[string]*upload),
+		customPasswords: make(map[int]string),
 	}
 }
 
@@ -68,6 +70,7 @@ func (m *Manager) Disconnect(hostID int) {
 	m.mu.Lock()
 	s := m.sessions[hostID]
 	delete(m.sessions, hostID)
+	delete(m.customPasswords, hostID)
 	m.mu.Unlock()
 	if s == nil {
 		return
@@ -89,10 +92,21 @@ func (m *Manager) DisconnectAll() {
 	for id := range m.sessions {
 		ids = append(ids, id)
 	}
+	m.customPasswords = make(map[int]string)
 	m.mu.Unlock()
 	for _, id := range ids {
 		m.Disconnect(id)
 	}
+}
+
+func (m *Manager) SetCustomPassword(hostID int, pw string) {
+	m.mu.Lock()
+	if pw == "" {
+		delete(m.customPasswords, hostID)
+	} else {
+		m.customPasswords[hostID] = pw
+	}
+	m.mu.Unlock()
 }
 
 func (m *Manager) ensure(ctx context.Context, hostID int, passwordProvider func(hostID int) (string, error)) (*sftp.Client, error) {
@@ -413,8 +427,16 @@ func (m *Manager) sftpAuth(host model.Host, passwordProvider func(hostID int) (s
 		}
 		u := strings.TrimSpace(host.SFTP.User)
 		p := host.SFTP.Password
-		if u == "" || p == "" {
+		if p == "" {
+			m.mu.Lock()
+			p = m.customPasswords[host.ID]
+			m.mu.Unlock()
+		}
+		if u == "" {
 			return "", nil, errors.New("sftp custom credentials are incomplete")
+		}
+		if p == "" {
+			return "", nil, errors.New("password_required")
 		}
 		return u, func() (string, error) { return p, nil }, nil
 

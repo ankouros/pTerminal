@@ -193,6 +193,9 @@ func loadLocked() (model.AppConfig, error) {
 	if dedupePersonalNetworks(&cfg) {
 		changed = true
 	}
+	if StripSecrets(&cfg) {
+		changed = true
+	}
 	if changed {
 		if err := saveLocked(cfg); err != nil {
 			return model.AppConfig{}, err
@@ -691,6 +694,8 @@ func Save(cfg model.AppConfig) error {
 }
 
 func saveLocked(cfg model.AppConfig) error {
+	_ = StripSecrets(&cfg)
+
 	p, err := ensureDir()
 	if err != nil {
 		return err
@@ -748,6 +753,7 @@ func ExportToDownloads() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	_ = StripSecrets(&cfg)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -770,4 +776,24 @@ func ExportToDownloads() (string, error) {
 	}
 
 	return out, nil
+}
+
+// StripSecrets removes in-config secrets (passwords) before persisting or sharing.
+func StripSecrets(cfg *model.AppConfig) bool {
+	changed := false
+	for ni := range cfg.Networks {
+		netw := &cfg.Networks[ni]
+		for hi := range netw.Hosts {
+			h := &netw.Hosts[hi]
+			if h.Auth.Password != "" {
+				h.Auth.Password = ""
+				changed = true
+			}
+			if h.SFTP != nil && h.SFTP.Password != "" {
+				h.SFTP.Password = ""
+				changed = true
+			}
+		}
+	}
+	return changed
 }

@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -11,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +31,8 @@ type Service struct {
 	deviceID string
 	user     model.UserProfile
 	baseDir  string
+	secret   []byte
+	insecure bool
 
 	peersMu sync.Mutex
 	peers   map[string]*peerState
@@ -52,14 +52,16 @@ type peerState struct {
 }
 
 type helloMsg struct {
-	App      string        `json:"app"`
-	Type     string        `json:"type"`
-	DeviceID string        `json:"deviceId"`
-	Name     string        `json:"name,omitempty"`
-	Email    string        `json:"email,omitempty"`
-	Host     string        `json:"host,omitempty"`
-	TCPPort  int           `json:"tcpPort"`
-	Teams    []TeamSummary `json:"teams,omitempty"`
+	App       string        `json:"app"`
+	Type      string        `json:"type"`
+	DeviceID  string        `json:"deviceId"`
+	Name      string        `json:"name,omitempty"`
+	Email     string        `json:"email,omitempty"`
+	Host      string        `json:"host,omitempty"`
+	TCPPort   int           `json:"tcpPort"`
+	Teams     []TeamSummary `json:"teams,omitempty"`
+	Timestamp int64         `json:"ts,omitempty"`
+	Auth      string        `json:"auth,omitempty"`
 }
 
 type wireMessage struct {
@@ -85,11 +87,21 @@ func NewService(cfg model.AppConfig, baseDir string) (*Service, error) {
 		return nil, errors.New("missing base dir")
 	}
 
+	secret, insecure, err := loadSecret()
+	if err != nil {
+		return nil, err
+	}
+	if insecure {
+		log.Printf("p2p: insecure mode enabled via %s", envP2PInsecure)
+	}
+
 	s := &Service{
 		cfg:      cfg,
 		deviceID: cfg.User.DeviceID,
 		user:     cfg.User,
 		baseDir:  baseDir,
+		secret:   secret,
+		insecure: insecure,
 		peers:    make(map[string]*peerState),
 		stopCh:   make(chan struct{}),
 	}
@@ -201,15 +213,24 @@ func (s *Service) sendHello() {
 	hostname, _ := os.Hostname()
 	teams := s.teamSummaries()
 
+	ts := int64(0)
+	auth := ""
+	if len(s.secret) > 0 {
+		ts = time.Now().Unix()
+		auth = helloAuth(s.secret, s.deviceID, s.tcpPort, ts)
+	}
+
 	msg := helloMsg{
-		App:      "pterminal",
-		Type:     "hello",
-		DeviceID: s.deviceID,
-		Name:     s.user.Name,
-		Email:    s.user.Email,
-		Host:     hostname,
-		TCPPort:  s.tcpPort,
-		Teams:    teams,
+		App:       "pterminal",
+		Type:      "hello",
+		DeviceID:  s.deviceID,
+		Name:      s.user.Name,
+		Email:     s.user.Email,
+		Host:      hostname,
+		TCPPort:   s.tcpPort,
+		Teams:     teams,
+		Timestamp: ts,
+		Auth:      auth,
 	}
 	b, err := json.Marshal(msg)
 	if err != nil {
@@ -241,6 +262,9 @@ func (s *Service) listenLoop() {
 			continue
 		}
 		if msg.DeviceID == "" || msg.DeviceID == s.deviceID {
+			continue
+		}
+		if !verifyHello(s.secret, msg.DeviceID, msg.TCPPort, msg.Timestamp, msg.Auth, time.Now()) {
 			continue
 		}
 		s.upsertPeer(msg, addr)
@@ -320,8 +344,10 @@ func (s *Service) syncPeer(peer peerState) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(syncTimeout))
 
-	enc := json.NewEncoder(conn)
-	dec := json.NewDecoder(bufio.NewReader(conn))
+	codec, err := newCodec(conn, s.secret)
+	if err != nil {
+		return
+	}
 
 	cfg := s.configSnapshot()
 	manifests := s.buildManifests(cfg)
@@ -334,17 +360,17 @@ func (s *Service) syncPeer(peer peerState) {
 		Teams:     s.teamSummariesFromConfig(cfg),
 		Manifests: manifests,
 	}
-	if err := enc.Encode(localMsg); err != nil {
+	if err := codec.Encode(localMsg); err != nil {
 		return
 	}
 
 	var remote wireMessage
-	if err := dec.Decode(&remote); err != nil {
+	if err := codec.Decode(&remote); err != nil {
 		return
 	}
 	if remote.Type == "sync" {
 		s.applyRemote(remote)
-		s.syncFiles(enc, dec, manifests, remote.Manifests, remote.DeviceID)
+		s.syncFiles(codec, manifests, remote.Manifests, remote.DeviceID)
 	}
 }
 
@@ -365,7 +391,7 @@ func (s *Service) applyRemote(remote wireMessage) {
 	}
 }
 
-func (s *Service) syncFiles(enc *json.Encoder, dec *json.Decoder, local, remote []teamrepo.Manifest, remoteDevice string) {
+func (s *Service) syncFiles(codec codec, local, remote []teamrepo.Manifest, remoteDevice string) {
 	localMap := manifestMap(local)
 	remoteMap := manifestMap(remote)
 	localFileMaps := manifestFileMaps(local)
@@ -385,7 +411,7 @@ func (s *Service) syncFiles(enc *json.Encoder, dec *json.Decoder, local, remote 
 	var sendMu sync.Mutex
 	send := func(msg wireMessage) {
 		sendMu.Lock()
-		_ = enc.Encode(msg)
+		_ = codec.Encode(msg)
 		sendMu.Unlock()
 	}
 
@@ -394,7 +420,7 @@ func (s *Service) syncFiles(enc *json.Encoder, dec *json.Decoder, local, remote 
 		wantClosed := false
 		for {
 			var msg wireMessage
-			if err := dec.Decode(&msg); err != nil {
+			if err := codec.Decode(&msg); err != nil {
 				if !wantClosed {
 					close(wantCh)
 				}
@@ -468,20 +494,8 @@ func (s *Service) applyTeamFile(msg wireMessage, remoteDevice string) error {
 	if msg.TeamID == "" {
 		return errors.New("missing team id")
 	}
-	teamDir, err := teamrepo.EnsureTeamDir(s.baseDir, msg.TeamID)
+	fullPath, err := s.teamFilePath(msg.TeamID, msg.Path)
 	if err != nil {
-		return err
-	}
-	if msg.Path == "" || strings.Contains(msg.Path, "..") {
-		return errors.New("invalid path")
-	}
-
-	data, err := base64.StdEncoding.DecodeString(msg.DataB64)
-	if err != nil {
-		return err
-	}
-	fullPath := filepath.Join(teamDir, filepath.FromSlash(msg.Path))
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
 		return err
 	}
 
@@ -498,6 +512,14 @@ func (s *Service) applyTeamFile(msg wireMessage, remoteDevice string) error {
 		fullPath = fullPath + ".conflict-" + remoteDevice + "-" + suffix
 	}
 
+	data, err := base64.StdEncoding.DecodeString(msg.DataB64)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
+		return err
+	}
 	if err := os.WriteFile(fullPath, data, 0o600); err != nil {
 		return err
 	}
@@ -587,14 +609,10 @@ func (s *Service) teamScopedConfig(cfg model.AppConfig) model.AppConfig {
 }
 
 func (s *Service) readTeamFile(teamID, relPath string) ([]byte, error) {
-	teamDir, err := teamrepo.EnsureTeamDir(s.baseDir, teamID)
+	fullPath, err := s.teamFilePath(teamID, relPath)
 	if err != nil {
 		return nil, err
 	}
-	if relPath == "" || strings.Contains(relPath, "..") {
-		return nil, errors.New("invalid path")
-	}
-	fullPath := filepath.Join(teamDir, filepath.FromSlash(relPath))
 	return os.ReadFile(fullPath)
 }
 
@@ -631,6 +649,9 @@ func computeWants(local, remote teamrepo.Manifest) []string {
 
 	wants := []string{}
 	for _, entry := range remote.Files {
+		if _, err := cleanTeamRelPath(entry.Path); err != nil {
+			continue
+		}
 		if entry.Deleted {
 			continue
 		}
@@ -697,11 +718,10 @@ func (s *Service) applyRemoteDeletions(local, remote teamrepo.Manifest) error {
 		if entry.Hash != "" && le.Hash != "" && entry.Hash != le.Hash {
 			continue
 		}
-		teamDir, err := teamrepo.EnsureTeamDir(s.baseDir, remote.TeamID)
+		fullPath, err := s.teamFilePath(remote.TeamID, entry.Path)
 		if err != nil {
-			return err
+			continue
 		}
-		fullPath := filepath.Join(teamDir, filepath.FromSlash(entry.Path))
 		_ = os.Remove(fullPath)
 	}
 	return nil
@@ -766,8 +786,10 @@ func (s *Service) handleConn(conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(syncTimeout))
 
-	enc := json.NewEncoder(conn)
-	dec := json.NewDecoder(bufio.NewReader(conn))
+	codec, err := newCodec(conn, s.secret)
+	if err != nil {
+		return
+	}
 
 	cfg := s.configSnapshot()
 	manifests := s.buildManifests(cfg)
@@ -779,12 +801,12 @@ func (s *Service) handleConn(conn net.Conn) {
 		Teams:     s.teamSummariesFromConfig(cfg),
 		Manifests: manifests,
 	}
-	if err := enc.Encode(localMsg); err != nil {
+	if err := codec.Encode(localMsg); err != nil {
 		return
 	}
 
 	var remote wireMessage
-	if err := dec.Decode(&remote); err != nil {
+	if err := codec.Decode(&remote); err != nil {
 		return
 	}
 	if remote.Type != "sync" {
@@ -792,5 +814,5 @@ func (s *Service) handleConn(conn net.Conn) {
 	}
 
 	s.applyRemote(remote)
-	s.syncFiles(enc, dec, manifests, remote.Manifests, remote.DeviceID)
+	s.syncFiles(codec, manifests, remote.Manifests, remote.DeviceID)
 }

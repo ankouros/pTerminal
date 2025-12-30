@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -134,6 +135,9 @@ func BuildManifest(teamDir, teamID string) (Manifest, error) {
 	for _, entry := range entries {
 		files = append(files, entry)
 	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
 
 	return Manifest{
 		TeamID:      teamID,

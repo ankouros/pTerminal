@@ -14,3 +14,12 @@ dist/
 .env
 scripts/docker/.env
 AGENTS.md
+
+# Codex artifacts (do not commit)
+.codex/
+.codex-*/
+.codexrc
+.codex.json
+.codex.yaml
+.codex.yml
+.codex.log

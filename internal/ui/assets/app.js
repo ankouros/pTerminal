@@ -183,6 +183,7 @@
 
   let config = { user: {}, teams: [], scripts: [], networks: [] };
   let configLoaded = false;
+  let configLoading = false;
   let activeTeamId = "";
   let activeNetworkId = null;
   let activeHostId = null;
@@ -206,6 +207,9 @@
   const hostFiles = new Map(); // hostId -> { pane, cwd, selectedPath, entries, fileInput }
   const hostTabs = new Map(); // hostId -> "terminal" | "files"
 
+  const runtimePasswords = new Map(); // hostId -> password/passphrase (memory only)
+  const runtimeSftpPasswords = new Map(); // hostId -> sftp custom password (memory only)
+
   let term = null;
   let fitAddon = null;
   let clipboardAddon = null;
@@ -220,6 +224,32 @@
   let resizeTimer = null;
   let lastResize = { cols: 0, rows: 0 };
   let inputInFlight = false;
+
+  function getRuntimePassword(hostId) {
+    return runtimePasswords.get(hostId) || "";
+  }
+
+  function setRuntimePassword(hostId, pw) {
+    if (!hostId) return;
+    if (pw) {
+      runtimePasswords.set(hostId, pw);
+    } else {
+      runtimePasswords.delete(hostId);
+    }
+  }
+
+  function getRuntimeSftpPassword(hostId) {
+    return runtimeSftpPasswords.get(hostId) || "";
+  }
+
+  function setRuntimeSftpPassword(hostId, pw) {
+    if (!hostId) return;
+    if (pw) {
+      runtimeSftpPasswords.set(hostId, pw);
+    } else {
+      runtimeSftpPasswords.delete(hostId);
+    }
+  }
 
   /* ===================== Teams ===================== */
 
@@ -1027,35 +1057,61 @@
 
     // If SFTP is set to reuse connection credentials, opportunistically include the password.
     const sftpMode = host.sftp?.credentials || "connection";
-    const needsConnPw = sftpMode !== "custom" && host.auth?.method === "password";
-    const hasConnPw = !!host.auth?.password;
+    const isCustom = sftpMode === "custom";
+    const needsConnPw = !isCustom && host.auth?.method === "password";
+    const needsKeyPass = !isCustom && host.auth?.method === "key";
 
-    const tryOnce = async (pw) => {
+    const tryOnce = async (connPw, sftpPw) => {
       const payload = { ...req, hostId };
-      if (pw) payload.passwordB64 = b64enc(pw);
+      if (connPw) payload.passwordB64 = b64enc(connPw);
+      if (sftpPw) payload.sftpPasswordB64 = b64enc(sftpPw);
       return rpc(payload);
     };
 
+    const currentConnSecret = () => (!isCustom ? getRuntimePassword(hostId) : "");
+    const currentSftpSecret = () => (isCustom ? getRuntimeSftpPassword(hostId) : "");
+
     try {
-      return await tryOnce(needsConnPw && hasConnPw ? host.auth.password : "");
+      return await tryOnce(currentConnSecret(), currentSftpSecret());
     } catch (err) {
       // Host key trust
       if (err.error === "unknown_host_key" || err.error === "host_key_mismatch") {
         await showTrustDialogAsync(hostId, err.hostPort, err.fingerprint);
-        return await tryOnce(needsConnPw && hasConnPw ? host.auth.password : "");
+        return await tryOnce(currentConnSecret(), currentSftpSecret());
       }
 
-      // Password required (only for connection creds + password auth)
-      if (err.error === "password_required" && needsConnPw) {
+      if (err.error === "password_required") {
+        if (isCustom) {
+          const pw = await promptDialog(
+            `SFTP password for ${host.sftp?.user || host.user}@${host.host}:`,
+            "",
+            { okText: "Use password", type: "password" }
+          );
+          if (!pw) throw err;
+          setRuntimeSftpPassword(hostId, pw);
+          return await tryOnce("", pw);
+        }
+        if (needsConnPw) {
+          const pw = await promptDialog(
+            `Password for ${host.user}@${host.host} (SFTP):`,
+            "",
+            { okText: "Use password", type: "password" }
+          );
+          if (!pw) throw err;
+          setRuntimePassword(hostId, pw);
+          return await tryOnce(pw, "");
+        }
+      }
+
+      if (err.error === "passphrase_required" && needsKeyPass) {
         const pw = await promptDialog(
-          `Password for ${host.user}@${host.host} (SFTP):`,
+          `Passphrase for ${host.user}@${host.host} (SFTP key):`,
           "",
-          { okText: "Use password", type: "password" }
+          { okText: "Use passphrase", type: "password" }
         );
         if (!pw) throw err;
-        host.auth.password = pw;
-        saveConfig();
-        return await tryOnce(pw);
+        setRuntimePassword(hostId, pw);
+        return await tryOnce(pw, "");
       }
 
       throw err;
@@ -1556,6 +1612,7 @@
   let statePollInFlight = false;
   const trustPrompted = new Set();
   const passwordPrompted = new Set();
+  const passphrasePrompted = new Set();
   let lastConnectedKey = null;
 
   function nextStatePollDelay() {
@@ -1596,6 +1653,7 @@
         if (s.state === "connected") {
           trustPrompted.delete(hostId);
           passwordPrompted.delete(hostId);
+          passphrasePrompted.delete(hostId);
           updateStatus(s);
 
           const key = `${hostId}:${tabId}`;
@@ -1650,8 +1708,7 @@
             })
               .then((pw) => {
                 if (pw) {
-                  host.auth.password = pw;
-                  saveConfig();
+                  setRuntimePassword(hostId, pw);
                   connectHost(host);
                 } else {
                   passwordPrompted.delete(hostId);
@@ -1659,6 +1716,29 @@
               })
               .catch(() => {
                 passwordPrompted.delete(hostId);
+              });
+          }
+        }
+
+        if (s.errCode === "passphrase_required" && !passphrasePrompted.has(hostId)) {
+          const host = findHostById(hostId);
+          const driver = host?.driver || "ssh";
+          if (host && driver === "ssh" && host.auth?.method === "key") {
+            passphrasePrompted.add(hostId);
+            promptDialog(`Passphrase for ${host.user}@${host.host}:`, "", {
+              okText: "Connect",
+              type: "password",
+            })
+              .then((pw) => {
+                if (pw) {
+                  setRuntimePassword(hostId, pw);
+                  connectHost(host);
+                } else {
+                  passphrasePrompted.delete(hostId);
+                }
+              })
+              .catch(() => {
+                passphrasePrompted.delete(hostId);
               });
           }
         }
@@ -2065,6 +2145,7 @@
       const size = await fitTerminalAndGetSize();
 
       const driver = host.driver || "ssh";
+      const secret = getRuntimePassword(host.id);
       const req = {
         type: "select",
         hostId: host.id,
@@ -2074,9 +2155,9 @@
         // 🔑 send stored password immediately if available
         passwordB64:
           driver === "ssh" &&
-          host.auth?.method === "password" &&
-          host.auth.password
-            ? b64enc(host.auth.password)
+          (host.auth?.method === "password" || host.auth?.method === "key") &&
+          secret
+            ? b64enc(secret)
             : "",
       };
 
@@ -2282,8 +2363,8 @@
     // Auth method
     el("host-auth").value = auth.method || "password";
 
-    // Password field (ssh + telecom)
-    el("host-password").value = auth.password || "";
+    // Password field (ssh + telecom), memory-only
+    el("host-password").value = target?.id ? getRuntimePassword(target.id) : "";
 
     normalizeHostSFTP(target);
 
@@ -2295,7 +2376,7 @@
     el("sftp-cred-mode").value = sftpCredMode === "custom" ? "custom" : "connection";
 
     el("sftp-user").value = target?.sftp?.user || "";
-    el("sftp-password").value = target?.sftp?.password || "";
+    el("sftp-password").value = target?.id ? getRuntimeSftpPassword(target.id) : "";
 
     // Telecom fields
     el("telecom-path").value = target?.telecom?.path || "";
@@ -2490,8 +2571,24 @@
       const sftpEnabled = !!el("sftp-enabled").checked;
       const sftpMode = el("sftp-cred-mode").value || "connection";
 
+      const authMethod = el("host-auth").value;
+      const hostPassword = el("host-password").value || "";
+      const sftpPassword = sftpMode === "custom" ? el("sftp-password").value : "";
+
       const hostScope = el("host-scope")?.value || "private";
       const hostTeamId = hostScope === "team" ? el("host-team").value : "";
+
+      const hostId = editorMode === "create" ? nextHostId() : editorTarget.id;
+      if (authMethod === "password" || authMethod === "key") {
+        setRuntimePassword(hostId, hostPassword);
+      } else {
+        setRuntimePassword(hostId, "");
+      }
+      if (sftpEnabled && sftpMode === "custom") {
+        setRuntimeSftpPassword(hostId, sftpPassword);
+      } else {
+        setRuntimeSftpPassword(hostId, "");
+      }
 
       const data = {
         name: el("host-name").value.trim(),
@@ -2502,8 +2599,8 @@
         scope: hostScope,
         teamId: hostTeamId,
         auth: {
-          method: el("host-auth").value,
-          password: el("host-password").value || "",
+          method: authMethod,
+          password: "",
         },
         sftpEnabled: sftpEnabled,
         sftp: sftpEnabled
@@ -2511,7 +2608,7 @@
               enabled: true,
               credentials: sftpMode === "custom" ? "custom" : "connection",
               user: sftpMode === "custom" ? el("sftp-user").value.trim() : "",
-              password: sftpMode === "custom" ? el("sftp-password").value : "",
+              password: "",
             }
           : undefined,
         telecom:
@@ -2526,7 +2623,7 @@
 
       if (editorMode === "create") {
         net.hosts.push({
-          id: nextHostId(),
+          id: hostId,
           ...data,
           hostKey: { mode: "known_hosts" },
           sftpEnabled: false,
@@ -2691,11 +2788,16 @@
 
   let teamsPresenceTimer = null;
 
+  let pendingTeamsOpen = false;
+
   function openTeamsModal() {
     if (!configLoaded) {
-      notifyWarn("Config is still loading. Please try again.");
+      pendingTeamsOpen = true;
+      loadConfig();
+      notifyInfo("Loading config...");
       return;
     }
+    pendingTeamsOpen = false;
     teamsModalOpen = true;
     el("teams-modal").classList.remove("hidden");
     profileDirty = false;
@@ -3269,12 +3371,21 @@
       notifyWarn("Config is still loading. Please try again.");
       return;
     }
-    rpc({ type: "config_save", config })
+    const sanitized = JSON.parse(JSON.stringify(config || {}));
+    (sanitized.networks || []).forEach((net) => {
+      (net.hosts || []).forEach((host) => {
+        if (host?.auth) host.auth.password = "";
+        if (host?.sftp) host.sftp.password = "";
+      });
+    });
+    rpc({ type: "config_save", config: sanitized })
       .then(loadConfig)
       .catch((e) => notifyError(e.detail || e.error || "Failed to save config"));
   }
 
   function loadConfig() {
+    if (configLoading) return;
+    configLoading = true;
     rpc({ type: "config_get" })
       .then((res) => {
         if (!res || !res.config) {
@@ -3299,7 +3410,14 @@
       })
       .catch((e) =>
         notifyError("Failed to load config: " + (e.detail || e.error))
-      );
+      )
+      .finally(() => {
+        configLoading = false;
+        if (configLoaded && pendingTeamsOpen) {
+          pendingTeamsOpen = false;
+          openTeamsModal();
+        }
+      });
   }
 
   window.__applyConfig = (cfg) => {
@@ -3312,6 +3430,10 @@
     renderHosts();
     renderScripts();
     if (teamsModalOpen) renderTeamsModal();
+    if (pendingTeamsOpen && !teamsModalOpen) {
+      pendingTeamsOpen = false;
+      openTeamsModal();
+    }
   };
 
   window.__notifySoftwareRender = (() => {

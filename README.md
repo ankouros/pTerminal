@@ -117,6 +117,7 @@ Minimal example:
 - Auth methods defined in config: `password`, `key`, `agent` (UI wiring for key/agent is in progress but backend support exists).
 - Host key modes: `known_hosts` (strict check) or `insecure` (development/testing only).
 - Unknown/changed host keys trigger a dialog in the UI; trusted keys are persisted via the Go backend.
+- SSH/SFTP passwords and key passphrases are kept in memory only and are not persisted to disk.
 
 ## Import / export
 
@@ -189,6 +190,7 @@ AggelosG
 Quick checklist for two instances on the same LAN:
 
 1. Launch pTerminal on two machines (or two user sessions on the same machine).
+   - Ensure `PTERMINAL_P2P_SECRET` is set to the same value on both instances (required for sync).
 2. In **Teams**, set your profile email on each instance (must match a member entry).
 3. Create a team on instance A, add instance B's email as a member.
 4. In the team dropdown, pick the new team and create a network + host with scope = Team.

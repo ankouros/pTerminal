@@ -44,6 +44,8 @@ func Run() error {
 		defer p2pSvc.Close()
 	}
 
+	w.ApplyConfig(cfg)
+
 	if p2pSvc != nil {
 		p2pSvc.SetOnMerged(func(cfg model.AppConfig) {
 			if err := config.Save(cfg); err != nil {
