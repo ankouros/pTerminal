@@ -48,6 +48,13 @@ func installWindowCloseHandler(w webview.WebView) {
 	C.install_window_delete_handler((*C.GtkWidget)(unsafe.Pointer(w.Window())))
 }
 
+func centerGtkWindow(w webview.WebView) {
+	if w == nil {
+		return
+	}
+	C.gtk_window_set_position((*C.GtkWindow)(unsafe.Pointer(w.Window())), C.GTK_WIN_POS_CENTER_ALWAYS)
+}
+
 //export windowDeleteEventCallback
 func windowDeleteEventCallback() C.gboolean {
 	if trayWindow == nil {

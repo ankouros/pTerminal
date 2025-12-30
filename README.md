@@ -75,6 +75,7 @@ On Linux the app also creates a system tray icon next to the clock; use it to sh
 - The navigation bar additionally exposes update status text with “Check updates” and “Install update” buttons powered by GitHub releases so you can download/install the latest portable bundle without leaving the UI.
 
 Run `./bin/pterminal --version` (or `pterminal --version`) to see the embedded version, git commit, and build timestamp before launching the UI.
+The native window now opens centered in the display and shows immediately with the tray already attached so the UI feels smooth on startup.
 
 The Makefile automatically redirects Go module/cache paths to `$XDG_CACHE_HOME/pterminal` (or `$HOME/.cache/pterminal`) so enterprise module systems with read-only defaults still work. Missing `pkg-config` `.pc` files are shimmed in the same cache if your distro leaves gaps (common on SLES).
 

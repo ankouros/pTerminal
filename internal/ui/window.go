@@ -1077,6 +1077,7 @@ func (w *Window) startTray() {
 	trayInit(w)
 	installWindowCloseHandler(w.wv)
 	w.showFromTray()
+	centerGtkWindow(w.wv)
 }
 
 func (w *Window) triggerUpdateCheck(force bool) {
