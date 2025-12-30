@@ -175,6 +175,8 @@ type Window struct {
 	ioCancel context.CancelFunc
 	inputCh  chan inputMsg
 	resizeCh chan resizeMsg
+
+	windowHidden atomic.Bool
 }
 
 type pendingKey struct {
@@ -844,6 +846,7 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			w.wv.Eval("window.__notifySoftwareRender && window.__notifySoftwareRender();")
 		})
 	}
+	w.startTray()
 	return w, nil
 }
 
@@ -965,6 +968,33 @@ func (w *Window) startPTYFlushLoop() {
 	}()
 }
 
+func (w *Window) startTray() {
+	trayInit(w)
+}
+
+func (w *Window) hideFromTray() {
+	if w == nil {
+		return
+	}
+	hideGtkWindow(w.wv)
+	w.windowHidden.Store(true)
+}
+
+func (w *Window) showFromTray() {
+	if w == nil {
+		return
+	}
+	showGtkWindow(w.wv)
+	w.windowHidden.Store(false)
+	w.kickFlush()
+}
+
+func (w *Window) closeFromTray() {
+	if !confirmCloseDialog() {
+		return
+	}
+	w.Close()
+}
 func (w *Window) flushHost(hostID, tabID int) bool {
 	const maxBytesPerEval = 96 * 1024
 	const maxBytesPerCycle = 4 * maxBytesPerEval
@@ -1087,6 +1117,7 @@ func (w *Window) Close() {
 	if w.sftp != nil {
 		w.sftp.DisconnectAll()
 	}
+	trayCleanup()
 	w.wv.Destroy()
 }
 

@@ -9,6 +9,8 @@ This roadmap lists what exists today and what is planned next. Status reflects i
 - Persistent SSH sessions with reconnect logic.
 - SFTP file manager (list, upload/download, edit).
 - Team discovery + sync on LAN with authenticated/encrypted transport.
+- Acceptance tests now cover password, SSH key, agent, and keyboard-interactive flows so auth regressions fail fast (`internal/sshclient/sshclient_auth_acceptance_test.go`).
+- tray icon/menu for controlling window visibility and exit confirmation.
 - CLI/version metadata (`pterminal --version`).
 - Keyboard-interactive SSH auth with prompt integration (memory-only credentials).
 - Config import/export with normalization and conflict handling.

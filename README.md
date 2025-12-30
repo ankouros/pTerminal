@@ -61,6 +61,8 @@ make build
 make run
 ```
 
+On Linux the app also creates a system tray icon next to the clock; use it to show/hide the window or exit with confirmation.
+
 Run `./bin/pterminal --version` (or `pterminal --version`) to see the embedded version, git commit, and build timestamp before launching the UI.
 
 The Makefile automatically redirects Go module/cache paths to `$XDG_CACHE_HOME/pterminal` (or `$HOME/.cache/pterminal`) so enterprise module systems with read-only defaults still work. Missing `pkg-config` `.pc` files are shimmed in the same cache if your distro leaves gaps (common on SLES).
@@ -120,6 +122,7 @@ Minimal example:
 - Host key modes: `known_hosts` (strict check) or `insecure` (development/testing only).
 - Unknown/changed host keys trigger a dialog in the UI; trusted keys are persisted via the Go backend.
 - SSH/SFTP passwords and key passphrases are kept in memory only and are not persisted to disk.
+- Acceptance coverage lives inside `internal/sshclient/sshclient_auth_acceptance_test.go`, which validates password, key, SSH agent, and keyboard-interactive logins on every `go test` sweep so regressions in the authentication stack are caught early.
 
 ## Import / export
 
@@ -184,6 +187,7 @@ docker run --rm \
 - `make run` – build and run
 - `make fmt` / `make vet` – gofmt + `go vet`
 - `go test ./...` – run package tests (config/session/sftp have coverage)
+- `go test ./internal/sshclient` – exercises the SSH auth acceptance test for password/key/agent/keyboard-interactive flows
 - `make release` / `make portable` / `make flatpak` – produce distributable bundles
 
 Before sending patches, run `make fmt` and `make vet` (mirrors CI). For UI/asset edits, ensure the `go:embed` lists in `internal/ui/assets` stay in sync.

@@ -20,6 +20,11 @@ jobs:
           set -euo pipefail
           test -f internal/ui/assets/vendor/xterm.js || make assets
 
+      - name: Run SSH auth integration tests
+        run: |
+          set -euo pipefail
+          go test ./internal/sshclient
+
       - name: Install flatpak tooling
         run: |
           set -euo pipefail
@@ -59,4 +64,3 @@ jobs:
           files: |
             dist/pterminal.flatpak
             dist/pterminal.flatpak.sha256
-

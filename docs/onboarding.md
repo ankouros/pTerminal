@@ -31,6 +31,7 @@ make run
 make fmt
 make vet
 go test ./...
+go test ./internal/sshclient
 ```
 
 ## Key Environment Variables

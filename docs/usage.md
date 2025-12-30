@@ -19,10 +19,18 @@ This guide covers the end-user workflow for pTerminal.
   - `key`
   - `agent`
   - `keyboard-interactive`
-  
+
+The CLI test suite (`go test ./internal/sshclient`) now runs `internal/sshclient/sshclient_auth_acceptance_test.go`, which exercises every supported SSH auth method to guard against regressions.
+
 ## Version Information
 
 - Run `./bin/pterminal --version` (or `pterminal --version` if the binary is on your `$PATH`) to print the embedded version, git commit, and build timestamp without opening the UI.
+
+## Tray Icon
+
+- On Linux, pTerminal adds a tray icon (near the clock) with Show/Hide/Exit menu items.
+- Use the tray menu to hide the window without quitting or to bring it back when hidden.
+- "Exit pTerminal" opens a confirmation dialog before shutting down the app.
 
 ## Host Keys
 
