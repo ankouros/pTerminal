@@ -21,7 +21,7 @@ make build
 
 ## Optional automated install
 
-Run `sudo ./INSTALL.sh`; it installs Go, GTK/WebKit, Node (which typically provides `npm`), and git using the official Ubuntu repositories listed in `/etc/apt/sources.list.d/ubuntu.sources`, skips already satisfied packages, and requires the standard Ubuntu keyring, then runs the test suite, rebuilds the executable, installs `/usr/local/bin/pterminal`, and refreshes the icon cache so the desktop icon registers.
+Run `sudo ./INSTALL.sh`; it installs Go, GTK/WebKit, Node (which typically provides `npm`), and git by adding the standard Ubuntu sources (if missing) and ensuring `ubuntu-keyring` is present, skips already satisfied packages, then runs the test suite, rebuilds the executable, installs `/usr/local/bin/pterminal`, and refreshes the icon cache so the desktop icon registers.
 
 ## Run from Source
 

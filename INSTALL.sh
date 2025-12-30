@@ -9,15 +9,42 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 UBUNTU_SOURCES="/etc/apt/sources.list.d/ubuntu.sources"
+UBUNTU_KEYRING="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+
+create_sources() {
+  cat <<'EOF' > "$UBUNTU_SOURCES"
+Types: deb
+URIs: http://archive.ubuntu.com/ubuntu/
+Suites: noble noble-updates noble-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.ubuntu.com/ubuntu/
+Suites: noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+  chmod 644 "$UBUNTU_SOURCES"
+}
+
 if [ ! -f "$UBUNTU_SOURCES" ]; then
-  echo "Ubuntu official sources ($UBUNTU_SOURCES) missing; please add them before running INSTALL.sh"
-  exit 1
+  read -p "Ubuntu sources ($UBUNTU_SOURCES) are missing. Create them with the canonical mirrors? [y/N] " resp
+  if [[ "$resp" =~ ^[Yy]$ ]]; then
+    create_sources
+    echo "Created $UBUNTU_SOURCES"
+  else
+    echo "Skipping creation of Ubuntu sources; manual configuration required."
+  fi
 fi
 
-UBUNTU_KEYRING="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
 if [ ! -f "$UBUNTU_KEYRING" ]; then
-  echo "Ubuntu keyring ($UBUNTU_KEYRING) missing; install 'ubuntu-keyring' first"
-  exit 1
+  read -p "Ubuntu keyring ($UBUNTU_KEYRING) is missing. Install ubuntu-keyring now? [y/N] " resp
+  if [[ "$resp" =~ ^[Yy]$ ]]; then
+    apt-get install -y ubuntu-keyring
+  else
+    echo "Skipping keyring install; apt may warn about unsigned packages."
+  fi
 fi
 
 echo "Updating package lists from official repositories..."
