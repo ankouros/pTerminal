@@ -19,7 +19,7 @@ PTERMINAL_GOCACHE := $(CACHE_ROOT)/go-build
 PTERMINAL_GOMODCACHE := $(CACHE_ROOT)/go-mod
 PTERMINAL_PKGCONFIG := $(CACHE_ROOT)/pkgconfig
 
-.PHONY: build run clean assets fmt vet release portable flatpak publish-docker
+.PHONY: build run clean assets fmt vet release portable flatpak publish-docker sync-contracts
 
 build:
 	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
@@ -92,3 +92,6 @@ flatpak:
 
 publish-docker:
 	@bash scripts/docker/push_image.sh
+
+sync-contracts:
+	@bash scripts/sync-contracts.sh

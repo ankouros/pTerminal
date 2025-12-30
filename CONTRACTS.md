@@ -1,5 +1,8 @@
 # pTerminal Contracts
 
+Source of truth: `/home/aggelos/samakia-specs/repo-contracts/pterminal.md`
+Sync target: `/home/aggelos/pTerminal/CONTRACTS.md` (run `make sync-contracts` in pTerminal).
+
 These contracts define non-negotiable expectations for quality, UX, security, and operations.
 Any change that violates a contract must be redesigned before merging.
 

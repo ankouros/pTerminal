@@ -12,6 +12,7 @@ This guide covers setting up the repo for local development.
 ## Clone and Build
 
 ```bash
+make sync-contracts
 make assets
 make build
 ./bin/pterminal

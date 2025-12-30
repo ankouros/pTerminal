@@ -1,0 +1,28 @@
+# Contracts
+
+pTerminal contracts are defined in `samakia-specs` and synced into this repo.
+
+## Source of Truth
+
+- Canonical contract: `/home/aggelos/samakia-specs/repo-contracts/pterminal.md`
+- Local mirror: `CONTRACTS.md`
+
+## Sync
+
+Run the sync target after updating the spec or when you pull new changes:
+
+```bash
+make sync-contracts
+```
+
+By default the sync reads from `/home/aggelos/samakia-specs`. Override with:
+
+```bash
+SAMAKIA_SPECS_PATH=/path/to/samakia-specs make sync-contracts
+```
+
+## Updates
+
+- Update the contract in `samakia-specs` first.
+- Sync into this repo with `make sync-contracts`.
+- Note any expectations changes in `issues-tracker.md` and `ROADMAP.md`.

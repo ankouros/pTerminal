@@ -175,6 +175,7 @@ docker run --rm \
 
 ## Development workflow
 
+- `make sync-contracts` – sync `CONTRACTS.md` from `samakia-specs`
 - `make assets` – refresh xterm.js + addons in `internal/ui/assets/vendor/`
 - `make build` – compile to `bin/pterminal`
 - `make run` – build and run
@@ -183,8 +184,6 @@ docker run --rm \
 - `make release` / `make portable` / `make flatpak` – produce distributable bundles
 
 Before sending patches, run `make fmt` and `make vet` (mirrors CI). For UI/asset edits, ensure the `go:embed` lists in `internal/ui/assets` stay in sync.
-ankouros30@gmail.com
-AggelosG
 ## LAN smoke test
 
 Quick checklist for two instances on the same LAN:
