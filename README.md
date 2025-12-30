@@ -58,7 +58,7 @@ Downloads `xterm.js`, CSS, and addons into `internal/ui/assets/vendor/` where th
 sudo ./INSTALL.sh
 ```
 
-Runs `apt` against the official Ubuntu/Debian repositories to install Go, GTK/WebKit, Node, and git (skipping packages that are already present), then tests, cleans, builds, and publishes a desktop icon (and refreshes the icon cache) so everything is ready to run. The script checks for `npm` after installing `nodejs` since the node package usually bundles it.
+Runs `apt` against the official Ubuntu/Debian repositories that live in `/etc/apt/sources.list.d/ubuntu.sources` to install Go, GTK/WebKit, Node, and git (skipping packages that are already present), then tests, cleans, builds, and publishes a desktop icon (and refreshes the icon cache) so everything is ready to run. The script also ensures the Ubuntu archive keyring exists and checks for `npm` after installing `nodejs`.
 
 ### 2. Build & run
 

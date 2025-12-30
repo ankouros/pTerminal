@@ -8,6 +8,18 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+UBUNTU_SOURCES="/etc/apt/sources.list.d/ubuntu.sources"
+if [ ! -f "$UBUNTU_SOURCES" ]; then
+  echo "Ubuntu official sources ($UBUNTU_SOURCES) missing; please add them before running INSTALL.sh"
+  exit 1
+fi
+
+UBUNTU_KEYRING="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+if [ ! -f "$UBUNTU_KEYRING" ]; then
+  echo "Ubuntu keyring ($UBUNTU_KEYRING) missing; install 'ubuntu-keyring' first"
+  exit 1
+fi
+
 echo "Updating package lists from official repositories..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
