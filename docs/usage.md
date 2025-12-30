@@ -32,6 +32,7 @@ The CLI test suite (`go test ./internal/sshclient`) now runs `internal/sshclient
 - Use the tray menu to hide the window without quitting or to bring it back when hidden.
 - "Exit pTerminal" opens a confirmation dialog before shutting down the app.
 - Closing the main window only hides it to the tray so the icon/menu remain active; use the tray controls to reopen the UI or exit.
+- The tray menu now also includes an "About pTerminal" entry that pops up the embedded version, git commit, and build timestamp.
 
 ## Host Keys
 

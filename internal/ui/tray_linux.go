@@ -7,7 +7,7 @@ package ui
 #include <gtk/gtk.h>
 #include <stdint.h>
 
-typedef enum { TRAY_SHOW, TRAY_HIDE, TRAY_CLOSE } tray_action_t;
+typedef enum { TRAY_SHOW, TRAY_HIDE, TRAY_VERSION, TRAY_CLOSE } tray_action_t;
 
 static GtkStatusIcon *tray_icon = NULL;
 static GtkWidget *tray_menu = NULL;
@@ -34,15 +34,18 @@ static void tray_init() {
 
     GtkWidget *show_item = gtk_menu_item_new_with_label("Show pTerminal");
     GtkWidget *hide_item = gtk_menu_item_new_with_label("Hide Window");
+    GtkWidget *version_item = gtk_menu_item_new_with_label("About pTerminal");
     GtkWidget *close_item = gtk_menu_item_new_with_label("Exit pTerminal");
 
     g_signal_connect(show_item, "activate", G_CALLBACK(tray_menu_item_cb), GINT_TO_POINTER(TRAY_SHOW));
     g_signal_connect(hide_item, "activate", G_CALLBACK(tray_menu_item_cb), GINT_TO_POINTER(TRAY_HIDE));
+    g_signal_connect(version_item, "activate", G_CALLBACK(tray_menu_item_cb), GINT_TO_POINTER(TRAY_VERSION));
     g_signal_connect(close_item, "activate", G_CALLBACK(tray_menu_item_cb), GINT_TO_POINTER(TRAY_CLOSE));
 
     tray_menu = gtk_menu_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), show_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), hide_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), version_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), close_item);
     gtk_widget_show_all(tray_menu);
@@ -70,15 +73,29 @@ static gboolean tray_confirm_close() {
     gtk_widget_destroy(dialog);
     return response == GTK_RESPONSE_YES;
 }
+
+static void tray_show_version(const char *version) {
+    GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO,
+                                               GTK_BUTTONS_OK, "%s", version);
+    gtk_window_set_title(GTK_WINDOW(dialog), "About pTerminal");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+}
 */
 import "C"
+
+import (
+	"github.com/ankouros/pterminal/internal/buildinfo"
+	"unsafe"
+)
 
 var trayWindow *Window
 
 const (
-	trayActionShow  = 0
-	trayActionHide  = 1
-	trayActionClose = 2
+	trayActionShow    = 0
+	trayActionHide    = 1
+	trayActionVersion = 2
+	trayActionClose   = 3
 )
 
 func trayInit(w *Window) {
@@ -107,7 +124,19 @@ func trayActionCallback(action C.int) {
 		trayWindow.showFromTray()
 	case trayActionHide:
 		trayWindow.hideFromTray()
+	case trayActionVersion:
+		trayWindow.showVersion()
 	case trayActionClose:
 		trayWindow.closeFromTray()
 	}
+}
+
+func (w *Window) showVersion() {
+	if w == nil {
+		return
+	}
+	info := buildinfo.String()
+	cstr := C.CString(info)
+	C.tray_show_version(cstr)
+	C.free(unsafe.Pointer(cstr))
 }

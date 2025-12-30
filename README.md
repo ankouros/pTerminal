@@ -71,6 +71,7 @@ make run
 
 On Linux the app also creates a system tray icon next to the clock; use it to show/hide the window or exit with confirmation.
 - Closing the main window merely hides it to the tray so the icon and its menu stay available for reopening or exiting.
+- The tray menu also exposes an "About pTerminal" entry that shows the embedded version, commit, and build timestamp so you can confirm what’s running without relaunching.
 
 Run `./bin/pterminal --version` (or `pterminal --version`) to see the embedded version, git commit, and build timestamp before launching the UI.
 
