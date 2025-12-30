@@ -61,6 +61,8 @@ make build
 make run
 ```
 
+Run `./bin/pterminal --version` (or `pterminal --version`) to see the embedded version, git commit, and build timestamp before launching the UI.
+
 The Makefile automatically redirects Go module/cache paths to `$XDG_CACHE_HOME/pterminal` (or `$HOME/.cache/pterminal`) so enterprise module systems with read-only defaults still work. Missing `pkg-config` `.pc` files are shimmed in the same cache if your distro leaves gaps (common on SLES).
 
 ### 3. Configuration

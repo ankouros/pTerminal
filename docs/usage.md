@@ -19,6 +19,10 @@ This guide covers the end-user workflow for pTerminal.
   - `key`
   - `agent`
   - `keyboard-interactive`
+  
+## Version Information
+
+- Run `./bin/pterminal --version` (or `pterminal --version` if the binary is on your `$PATH`) to print the embedded version, git commit, and build timestamp without opening the UI.
 
 ## Host Keys
 

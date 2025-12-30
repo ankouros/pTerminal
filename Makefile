@@ -3,11 +3,16 @@ BIN := bin/pterminal
 RELEASE_ROOT := release
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || date +%Y%m%d)
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GOOS ?= linux
 GOARCH ?= $(shell go env GOARCH)
 RELEASE_DIR := $(RELEASE_ROOT)/pterminal-$(VERSION)-$(GOOS)-$(GOARCH)
 
-LDFLAGS := -s -w
+LDFLAGS := -s -w \
+	-X github.com/ankouros/pterminal/internal/buildinfo.Version=$(VERSION) \
+	-X github.com/ankouros/pterminal/internal/buildinfo.GitCommit=$(GIT_COMMIT) \
+	-X github.com/ankouros/pterminal/internal/buildinfo.BuildTime=$(BUILD_TIME)
 GO_BUILD_RELEASE_FLAGS := -trimpath -buildvcs=false
 
 # Some enterprise/HPC module systems ship Go with read-only defaults for caches.
@@ -26,7 +31,7 @@ build:
 	@bash scripts/ensure_pkgconfig_fallback.sh "$(PTERMINAL_PKGCONFIG)"
 	PKG_CONFIG_PATH="$(PTERMINAL_PKGCONFIG):$${PKG_CONFIG_PATH:-}" \
 		GOCACHE="$(PTERMINAL_GOCACHE)" GOMODCACHE="$(PTERMINAL_GOMODCACHE)" \
-		go build -o $(BIN) ./cmd/pterminal
+		go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pterminal
 
 run: build
 	./$(BIN)
