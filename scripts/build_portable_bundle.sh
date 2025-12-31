@@ -21,7 +21,7 @@ chmod +x "${OUT_DIR}/pterminal"
 
 cp -f packaging/pterminal.desktop "${OUT_DIR}/" 2>/dev/null || true
 cp -f packaging/pterminal.svg "${OUT_DIR}/" 2>/dev/null || true
-cp -f packaging/release_README.md "${OUT_DIR}/README.md" 2>/dev/null || true
+cp -f docs/tutorials/release_README.md "${OUT_DIR}/README.md" 2>/dev/null || true
 cp -f scripts/check_deps.sh "${OUT_DIR}/" 2>/dev/null || true
 
 mkdir -p "${OUT_DIR}/lib" "${OUT_DIR}/libexec"

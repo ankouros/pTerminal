@@ -6,6 +6,7 @@ Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written
 
 - [Features](#features)
 - [Architecture & constraints](#architecture--constraints)
+- [Entry points](#entry-points)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Terminal & Files tabs](#terminal--files-tabs)
@@ -35,6 +36,15 @@ Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written
 - SSH implementation: `golang.org/x/crypto/ssh` with custom session persistence; PTY data is base64 encoded both ways.
 - SFTP backend is native Go + UI tab (no external `sftp` process).
 - Node/npm usage is limited to `make assets` (fetching xterm vendor files under `internal/ui/assets/vendor/`).
+
+## Entry points
+
+- `CONTRACTS.md` and `/home/aggelos/samakia-specs/specs/base/ecosystem.yaml` define the shared contract baseline.
+- `AGENTS.md` defines non-negotiable agent and contributor rules.
+- `SECURITY.md` captures the security model and disclosure expectations.
+- `CHANGELOG.md` tracks repo-visible changes.
+- `docs/README.md` indexes docs and runbooks.
+- `docs/PRINCIPLES.md` and `docs/glossary.md` define local norms and terminology.
 
 ## Quick start
 

@@ -64,7 +64,7 @@ release:
 	@command -v strip >/dev/null 2>&1 && strip "$(RELEASE_DIR)/pterminal" || true
 	@cp -f packaging/pterminal.desktop "$(RELEASE_DIR)/" || true
 	@cp -f packaging/pterminal.svg "$(RELEASE_DIR)/" || true
-	@cp -f packaging/release_README.md "$(RELEASE_DIR)/README.md" || true
+	@cp -f docs/tutorials/release_README.md "$(RELEASE_DIR)/README.md" || true
 	@cp -f scripts/check_deps.sh "$(RELEASE_DIR)/" || true
 	@cp -f scripts/run_release.sh "$(RELEASE_DIR)/" || true
 	@chmod +x "$(RELEASE_DIR)/check_deps.sh" "$(RELEASE_DIR)/run_release.sh" 2>/dev/null || true

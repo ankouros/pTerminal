@@ -6,6 +6,7 @@ This roadmap lists what exists today and what is planned next. Status reflects i
 
 - Linux WebView app with embedded xterm.js UI.
 - Contracts synced from the `samakia-specs` submodule with `make specs-update` + `make sync-contracts`.
+- Shared ecosystem contract alignment with samakia-fabric via `samakia-specs`.
 - Persistent SSH sessions with reconnect logic.
 - SFTP file manager (list, upload/download, edit).
 - Team discovery + sync on LAN with authenticated/encrypted transport.

@@ -16,7 +16,7 @@ fi
 : "${GHCR_TOKEN:=}"
 : "${GHCR_OWNER_TYPE:=user}"
 
-readme_path="${DOCKER_README_PATH:-${ROOT_DIR}/Docker-repository-overview.md}"
+readme_path="${DOCKER_README_PATH:-${ROOT_DIR}/docs/tutorials/docker-repository-overview.md}"
 if [[ ! -f "${readme_path}" ]]; then
   echo "Missing ${readme_path}; cannot publish Docker repository overview." >&2
   exit 1

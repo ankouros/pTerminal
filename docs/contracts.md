@@ -5,6 +5,7 @@ pTerminal contracts are defined in `samakia-specs` and synced into this repo.
 ## Source of Truth
 
 - Canonical contract: `/home/aggelos/samakia-specs/repo-contracts/pterminal.md`
+- Shared ecosystem contract: `/home/aggelos/samakia-specs/specs/base/ecosystem.yaml`
 - Local mirror: `CONTRACTS.md`
 
 ## Sync
@@ -32,3 +33,4 @@ make specs-update
 - Update the contract in `samakia-specs` first.
 - Sync into this repo with `make sync-contracts`.
 - Note any expectations changes in `issues-tracker.md` and `ROADMAP.md`.
+- Evaluate contracts across samakia-fabric, samakia-platform, and pTerminal on every prompt.
