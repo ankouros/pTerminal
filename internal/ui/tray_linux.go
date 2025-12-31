@@ -7,6 +7,11 @@ package ui
 #include <gtk/gtk.h>
 #include <stdint.h>
 
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 typedef enum { TRAY_SHOW, TRAY_HIDE, TRAY_VERSION, TRAY_CLOSE } tray_action_t;
 
 static GtkStatusIcon *tray_icon = NULL;
@@ -81,6 +86,10 @@ static void tray_show_version(const char *version) {
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
 }
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 */
 import "C"
 

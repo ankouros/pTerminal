@@ -160,7 +160,7 @@
 
   <!-- About modal -->
   <div id="about-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
-    <div class="modal-card">
+    <div class="modal-card about-card">
       <div class="modal-title" id="about-title">About pTerminal</div>
 
       <div class="modal-body">
@@ -174,7 +174,47 @@
           </div>
         </div>
 
-        <div class="about-grid">
+        <div class="about-full" id="about-full">Inspecting build info…</div>
+
+        <div class="about-grid about-version-grid">
+          <div class="label">Version</div>
+          <div class="value" id="about-version">—</div>
+
+          <div class="label">Commit</div>
+          <div class="value mono" id="about-commit">—</div>
+
+          <div class="label">Build time</div>
+          <div class="value" id="about-build-time">—</div>
+        </div>
+
+        <div class="about-section">
+          <div class="about-section-title">Release info</div>
+          <div class="about-grid about-release-grid">
+            <div class="label">Latest release</div>
+            <div class="value" id="about-release-tag">—</div>
+
+            <div class="label">Status</div>
+            <div class="value" id="about-update-status">Loading status…</div>
+
+            <div class="label">Release notes</div>
+            <div class="value about-release-notes" id="about-release-notes">
+              Release notes unavailable.
+            </div>
+          </div>
+          <div class="about-release-links">
+            <a id="about-release-link" class="about-release-link hidden" href="#" target="_blank" rel="noopener">
+              View release
+            </a>
+            <button id="btn-about-check-updates" type="button" class="btn small secondary">
+              Check updates
+            </button>
+            <button id="btn-about-install-update" type="button" class="btn small primary hidden">
+              Install update
+            </button>
+          </div>
+        </div>
+
+        <div class="about-grid about-dev-grid">
           <div class="label">Developer</div>
           <div class="value">
             <span class="mono" id="about-email">ankouros30@gmail.com</span>

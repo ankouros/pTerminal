@@ -58,7 +58,7 @@ Downloads `xterm.js`, CSS, and addons into `internal/ui/assets/vendor/` where th
 sudo ./INSTALL.sh
 ```
 
-Runs `apt` against the official Ubuntu/Debian repositories (creating `/etc/apt/sources.list.d/ubuntu.sources` and installing `ubuntu-keyring` if needed) to install Go, GTK/WebKit, Node, and git (skipping packages that are already present), then tests, cleans, builds, and publishes a desktop icon (and refreshes the icon cache) so everything is ready to run. The script also checks for `npm` after installing `nodejs`.
+Runs `apt` against the official Ubuntu/Debian repositories (creating `/etc/apt/sources.list.d/ubuntu.sources` and installing `ubuntu-keyring` if needed) to install Go, GTK/WebKit, Node, and git (skipping packages that are already present), then tests, cleans, builds, and publishes a desktop icon (and refreshes the icon cache) so everything is ready to run. The script also checks for `npm` after installing `nodejs` and resets ownership of the generated `bin/` artifacts back to the invoking user so future builds don’t hit permissions errors.
 
 ### 2. Build & run
 
@@ -72,7 +72,9 @@ make run
 On Linux the app also creates a system tray icon next to the clock; use it to show/hide the window or exit with confirmation.
 - Closing the main window merely hides it to the tray so the icon and its menu stay available for reopening or exiting.
 - The tray menu also exposes an "About pTerminal" entry that shows the embedded version, commit, and build timestamp so you can confirm what’s running without relaunching.
+- That About popup now matches other pTerminal dialogs and also surfaces the latest GitHub release tag, notes, and install availability so you can immediately see what’s running and whether a newer bundle exists without leaving the UI.
 - The navigation bar additionally exposes update status text with “Check updates” and “Install update” buttons powered by GitHub releases so you can download/install the latest portable bundle without leaving the UI.
+- All popups now borrow the tray icon’s accent colors, blur, and glow so dialogs look and feel like they come from the system bar icon.
 
 Run `./bin/pterminal --version` (or `pterminal --version`) to see the embedded version, git commit, and build timestamp before launching the UI.
 The native window now opens centered in the display and shows immediately with the tray already attached so the UI feels smooth on startup.

@@ -205,9 +205,19 @@
     latest: "",
     assetName: "",
     assetUrl: "",
+    releaseUrl: "",
+    releaseNotes: "",
     error: "",
   };
   let lastUpdateError = "";
+  let aboutInfo = {
+    version: "",
+    gitCommit: "",
+    buildTime: "",
+    full: "",
+  };
+  let aboutInfoLoaded = false;
+  let aboutRequestInFlight = false;
 
   function setUpdateState(payload) {
     const info = payload?.update || {};
@@ -218,6 +228,8 @@
       latest: info.latest || "",
       assetName: info.assetName || "",
       assetUrl: info.assetUrl || "",
+      releaseUrl: info.releaseUrl || "",
+      releaseNotes: info.notes || "",
       error: info.error || "",
     };
     if (updateInfo.error && updateInfo.error !== lastUpdateError) {
@@ -225,6 +237,7 @@
       notifyError(updateInfo.error);
     }
     renderUpdateWidget();
+    renderAboutUpdateInfo();
   }
 
   function renderUpdateWidget() {
@@ -261,6 +274,114 @@
     installBtn.classList.add("hidden");
   }
 
+  function renderAboutUpdateInfo() {
+    const latestTag = updateInfo.latest || "—";
+    setAboutText("about-release-tag", latestTag, "—");
+
+    let statusText = "Up to date";
+    if (updateInfo.error) {
+      statusText = updateInfo.error;
+    } else if (updateInfo.installing) {
+      statusText = "Installing update…";
+    } else if (updateInfo.hasUpdate) {
+      statusText = updateInfo.latest
+        ? `New version ${updateInfo.latest} available`
+        : "New version available";
+    } else if (updateInfo.checking) {
+      statusText = "Checking for updates…";
+    }
+    setAboutText("about-update-status", statusText, "—");
+
+    const notesNode = el("about-release-notes");
+    if (notesNode) {
+      const rawNotes = (updateInfo.releaseNotes || "").trim();
+      let notesText = rawNotes || "Release notes unavailable.";
+      if (notesText.length > 600) {
+        notesText = `${notesText.slice(0, 600)} …`;
+      }
+      notesNode.textContent = notesText;
+    }
+
+    const linkEl = el("about-release-link");
+    if (linkEl) {
+      const url = updateInfo.assetUrl || updateInfo.releaseUrl || "";
+      if (url) {
+        linkEl.classList.remove("hidden");
+        linkEl.href = url;
+        linkEl.textContent = updateInfo.assetUrl
+          ? `Download ${updateInfo.assetName || "release"}`
+          : "View release";
+      } else {
+        linkEl.classList.add("hidden");
+      }
+    }
+
+    const installBtn = el("btn-about-install-update");
+    if (installBtn) {
+      installBtn.classList.toggle("hidden", !updateInfo.hasUpdate);
+      installBtn.disabled = updateInfo.installing;
+      installBtn.textContent = updateInfo.installing
+        ? "Installing…"
+        : updateInfo.assetName
+        ? `Install ${updateInfo.assetName}`
+        : "Install update";
+    }
+  }
+
+  function setAboutText(id, value, fallback = "—") {
+    const node = el(id);
+    if (!node) return;
+    if (value !== undefined && value !== null && value !== "") {
+      node.textContent = String(value);
+    } else {
+      node.textContent = fallback;
+    }
+  }
+
+  function renderAboutInfo() {
+    setAboutText("about-full", aboutInfo.full, "pTerminal");
+    setAboutText("about-version", aboutInfo.version || aboutInfo.full, "dev");
+    setAboutText("about-commit", aboutInfo.gitCommit, "—");
+    setAboutText("about-build-time", aboutInfo.buildTime, "—");
+  }
+
+  async function requestAboutInfo(force = false) {
+    if (!force && aboutInfoLoaded) {
+      renderAboutInfo();
+      renderAboutUpdateInfo();
+      return;
+    }
+    if (aboutRequestInFlight) {
+      return;
+    }
+    aboutRequestInFlight = true;
+    try {
+      const res = await rpc({ type: "about" });
+      setAboutInfo(res);
+    } catch (err) {
+      console.error("Failed to load About info", err);
+      renderAboutInfo();
+      renderAboutUpdateInfo();
+    } finally {
+      aboutRequestInFlight = false;
+    }
+  }
+
+  function setAboutInfo(payload) {
+    const about = payload?.about || {};
+    if ("version" in about) aboutInfo.version = about.version || "";
+    if ("gitCommit" in about) aboutInfo.gitCommit = about.gitCommit || "";
+    if ("buildTime" in about) aboutInfo.buildTime = about.buildTime || "";
+    if ("full" in about) aboutInfo.full = about.full || "";
+    aboutInfoLoaded = true;
+    renderAboutInfo();
+    if (payload) {
+      setUpdateState(payload);
+    } else {
+      renderAboutUpdateInfo();
+    }
+  }
+
   async function refreshUpdateStatus(force = false) {
     try {
       const res = await rpc({ type: "update_status", force });
@@ -276,7 +397,7 @@
     } catch (err) {
       notifyError("Failed to check for updates.");
     }
-    await refreshUpdateStatus(true);
+    await refreshUpdateStatus();
   }
 
   async function requestUpdateInstall() {
@@ -286,7 +407,7 @@
     } catch (err) {
       notifyError("Failed to install update.");
     }
-    await refreshUpdateStatus(true);
+    await refreshUpdateStatus();
   }
   const requestStatusCache = new Map();
   let requestStatusBootstrapped = false;
@@ -3704,7 +3825,8 @@
     };
 
     function showAbout() {
-      el("about-modal").classList.remove("hidden");
+      el("about-modal")?.classList.remove("hidden");
+      requestAboutInfo(true);
     }
 
     function hideAbout() {
@@ -3735,6 +3857,19 @@
       requestUpdateInstall().finally(() => {
         updateInstallBtn.disabled = false;
       });
+    });
+    const aboutCheckBtn = el("btn-about-check-updates");
+    const aboutInstallBtn = el("btn-about-install-update");
+    aboutCheckBtn?.addEventListener("click", () => {
+      if (aboutCheckBtn.disabled) return;
+      aboutCheckBtn.disabled = true;
+      requestUpdateCheck().finally(() => {
+        aboutCheckBtn.disabled = false;
+      });
+    });
+    aboutInstallBtn?.addEventListener("click", () => {
+      if (aboutInstallBtn.disabled) return;
+      requestUpdateInstall();
     });
 
     el("btn-copy").onclick = () => copySelectionToClipboard().catch(() => {});

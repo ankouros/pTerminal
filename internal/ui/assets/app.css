@@ -12,6 +12,9 @@
   --text-danger: #ff6b7d;
   --text-success: #3fb950;
   --text-warn: #d29922;
+  --tray-glow: rgba(90, 167, 255, 0.25);
+  --tray-surface: rgba(7, 10, 16, 0.8);
+  --tray-gradient: linear-gradient(180deg, rgba(12, 19, 35, 0.95), rgba(6, 8, 15, 0.95));
 
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont,
                "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans",
@@ -613,7 +616,8 @@ html, body {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(14px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -719,11 +723,24 @@ html, body {
 .modal-card {
   width: 520px;
   max-width: calc(100vw - 32px);
-  background: #0f1620;
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--tray-gradient);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: 14px;
   padding: 16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+  box-shadow: 0 25px 70px rgba(0,0,0,0.65), 0 1px 0 1px rgba(90,167,255,0.08);
+  position: relative;
+  overflow: hidden;
+  outline: 1px solid rgba(255,255,255,0.04);
+}
+
+.modal-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--tray-surface);
+  mix-blend-mode: screen;
+  opacity: 0.15;
+  pointer-events: none;
 }
 
 .file-edit-card {
@@ -884,6 +901,72 @@ html, body {
 
 .about-grid .label { opacity: 0.7; }
 .about-grid .value { word-break: break-all; }
+
+.about-card .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-full {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 0 4px;
+  line-height: 1.4;
+}
+
+.about-section {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.about-section-title {
+  font-size: 11px;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.about-release-grid .value.about-release-notes {
+  grid-column: 1 / -1;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+.about-release-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.about-release-link {
+  border-radius: 10px;
+  border: 1px solid rgba(90, 167, 255, 0.4);
+  color: var(--text-accent);
+  padding: 5px 12px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(90, 167, 255, 0.08);
+  text-decoration: none;
+}
+
+.about-release-link:hover {
+  border-color: rgba(90, 167, 255, 0.8);
+}
 
 /* Teams modal */
 .teams-card {

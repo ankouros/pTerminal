@@ -896,7 +896,18 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 			return ok(rpcResp{"path": w.pickTelecomExecutablePath()})
 
 		case "about":
-			return ok(rpcResp{"text": "pTerminal – SSH Terminal Manager"})
+			aboutPayload := rpcResp{
+				"full":      buildinfo.String(),
+				"version":   buildinfo.Version,
+				"gitCommit": buildinfo.GitCommit,
+				"buildTime": buildinfo.BuildTime,
+			}
+			updatePayload := w.updatePayload()
+			return ok(rpcResp{
+				"text":   "pTerminal – SSH Terminal Manager",
+				"about":  aboutPayload,
+				"update": updatePayload,
+			})
 
 		case "teams_presence":
 			if w.p2p == nil {

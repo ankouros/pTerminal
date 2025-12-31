@@ -19,6 +19,7 @@ Any change that violates a contract must be redesigned before merging.
 - Credentials are memory-only; no passwords or passphrases are persisted to disk.
 - Error states should be recoverable (clear messaging, retry paths where safe).
 - Host key prompts must clearly surface fingerprints and trust scope.
+- About/update popups must display the current version/commit/build metadata and release status with the same styling/interaction quality as other pTerminal dialogs.
 
 ## Security Contract
 

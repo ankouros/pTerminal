@@ -107,4 +107,10 @@ else
   echo "gtk-update-icon-cache not found; desktop icon cache not refreshed"
 fi
 
+# chown workspace bin artifacts back to the invoking user so subsequent builds don’t hit permission errors
+if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+  echo "Resetting ownership of generated files for ${SUDO_USER}"
+  chown -R "${SUDO_USER}:${SUDO_USER}" "$SCRIPT_DIR/bin"
+fi
+
 echo "Done. You can launch pTerminal from the desktop menu or by running 'pterminal'."
