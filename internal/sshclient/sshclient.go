@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,22 @@ func (e ErrHostKeyMismatch) Error() string {
 }
 
 var ErrPassphraseRequired = errors.New("passphrase_required")
+
+type ErrKeyNotFound struct {
+	Requested string
+	Checked   []string
+}
+
+func (e *ErrKeyNotFound) Error() string {
+	msg := "ssh key not found"
+	if e == nil {
+		return msg
+	}
+	if e.Requested != "" {
+		msg += ": " + e.Requested
+	}
+	return msg
+}
 
 /*
 NodeSession
@@ -323,34 +340,54 @@ func authMethod(
 		return ssh.Password(pwd), nil, nil
 
 	case model.AuthKey:
-		kp := expandHome(host.Auth.KeyPath)
-		if kp == "" {
-			kp = expandHome("~/.ssh/id_rsa")
-		}
-		b, err := os.ReadFile(kp)
-		if err != nil {
-			return nil, nil, err
-		}
-		signer, err := ssh.ParsePrivateKey(b)
-		if err != nil {
-			var missing *ssh.PassphraseMissingError
-			if errors.As(err, &missing) {
-				if passwordProvider == nil {
-					return nil, nil, ErrPassphraseRequired
-				}
-				pass, perr := passwordProvider()
-				if perr != nil || pass == "" {
-					return nil, nil, ErrPassphraseRequired
-				}
-				signer, err = ssh.ParsePrivateKeyWithPassphrase(b, []byte(pass))
-				if err != nil {
-					return nil, nil, err
-				}
-			} else {
+		keyPath := expandHome(host.Auth.KeyPath)
+		candidates := keyCandidates(keyPath)
+		checked := make([]string, 0, len(candidates))
+
+		for _, candidate := range candidates {
+			if candidate == "" {
+				continue
+			}
+			candidate = expandHome(candidate)
+			if candidate == "" {
+				continue
+			}
+			checked = append(checked, candidate)
+			info, err := os.Stat(candidate)
+			if err != nil || info.IsDir() {
+				continue
+			}
+
+			b, err := os.ReadFile(candidate)
+			if err != nil {
 				return nil, nil, err
 			}
+			signer, err := ssh.ParsePrivateKey(b)
+			if err != nil {
+				var missing *ssh.PassphraseMissingError
+				if errors.As(err, &missing) {
+					if passwordProvider == nil {
+						return nil, nil, ErrPassphraseRequired
+					}
+					pass, perr := passwordProvider()
+					if perr != nil || pass == "" {
+						return nil, nil, ErrPassphraseRequired
+					}
+					signer, err = ssh.ParsePrivateKeyWithPassphrase(b, []byte(pass))
+					if err != nil {
+						return nil, nil, err
+					}
+				} else {
+					return nil, nil, err
+				}
+			}
+			return ssh.PublicKeys(signer), nil, nil
 		}
-		return ssh.PublicKeys(signer), nil, nil
+
+		return nil, nil, &ErrKeyNotFound{
+			Requested: keyPath,
+			Checked:   checked,
+		}
 
 	case model.AuthAgent:
 		sock := os.Getenv("SSH_AUTH_SOCK")
@@ -467,4 +504,32 @@ func expandHome(p string) string {
 		}
 	}
 	return p
+}
+
+func keyCandidates(requested string) []string {
+	paths := make([]string, 0, 5)
+	if strings.TrimSpace(requested) != "" {
+		paths = append(paths, requested)
+	}
+	paths = append(paths,
+		"~/.ssh/id_ed25519",
+		"~/.ssh/id_ecdsa",
+		"~/.ssh/id_rsa",
+		"~/.ssh/id_dsa",
+	)
+
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }

@@ -3,9 +3,9 @@ package model
 type AuthMethod string
 
 const (
-	AuthPassword AuthMethod = "password"
-	AuthKey      AuthMethod = "key"
-	AuthAgent    AuthMethod = "agent"
+	AuthPassword            AuthMethod = "password"
+	AuthKey                 AuthMethod = "key"
+	AuthAgent               AuthMethod = "agent"
 	AuthKeyboardInteractive AuthMethod = "keyboard-interactive"
 )
 
@@ -14,6 +14,14 @@ type HostKeyMode string
 const (
 	HostKeyKnownHosts HostKeyMode = "known_hosts"
 	HostKeyInsecure   HostKeyMode = "insecure"
+)
+
+type HostRole string
+
+const (
+	HostRoleGeneric  HostRole = "generic"
+	HostRoleFabric   HostRole = "fabric"
+	HostRolePlatform HostRole = "platform"
 )
 
 type AuthConfig struct {
@@ -91,6 +99,12 @@ type Host struct {
 	Port int    `json:"port"`
 	User string `json:"user"`
 
+	// Role labels the host for Samakia usage (fabric/platform/generic).
+	Role HostRole `json:"role,omitempty"`
+
+	// ManagedBy marks automated ownership (e.g. samakia-import).
+	ManagedBy string `json:"managedBy,omitempty"`
+
 	// Connection driver for this host. Defaults to "ssh".
 	Driver ConnectionDriver `json:"driver,omitempty"`
 
@@ -115,11 +129,11 @@ type Host struct {
 	TeamID string `json:"teamId,omitempty"`
 
 	// Sync metadata for conflict detection.
-	UpdatedAt int64           `json:"updatedAt,omitempty"`
-	UpdatedBy string          `json:"updatedBy,omitempty"`
+	UpdatedAt int64          `json:"updatedAt,omitempty"`
+	UpdatedBy string         `json:"updatedBy,omitempty"`
 	Version   map[string]int `json:"version,omitempty"`
-	Conflict  bool            `json:"conflict,omitempty"`
-	Deleted   bool            `json:"deleted,omitempty"`
+	Conflict  bool           `json:"conflict,omitempty"`
+	Deleted   bool           `json:"deleted,omitempty"`
 }
 
 type Network struct {
@@ -134,11 +148,11 @@ type Network struct {
 	TeamID string `json:"teamId,omitempty"`
 
 	// Sync metadata for conflict detection.
-	UpdatedAt int64           `json:"updatedAt,omitempty"`
-	UpdatedBy string          `json:"updatedBy,omitempty"`
+	UpdatedAt int64          `json:"updatedAt,omitempty"`
+	UpdatedBy string         `json:"updatedBy,omitempty"`
 	Version   map[string]int `json:"version,omitempty"`
-	Conflict  bool            `json:"conflict,omitempty"`
-	Deleted   bool            `json:"deleted,omitempty"`
+	Conflict  bool           `json:"conflict,omitempty"`
+	Deleted   bool           `json:"deleted,omitempty"`
 }
 
 type AppConfig struct {

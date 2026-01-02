@@ -720,6 +720,22 @@ html, body {
   border-color: rgba(90,167,255,0.6);
 }
 
+.modal-input,
+.modal-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+}
+
+.modal-input:focus,
+.modal-select:focus {
+  outline: none;
+  border-color: rgba(90,167,255,0.6);
+}
+
 .modal-card {
   width: 520px;
   max-width: calc(100vw - 32px);
@@ -806,6 +822,42 @@ html, body {
 .modal-row .value { word-break: break-all; }
 
 .mono { font-family: var(--font-mono); }
+
+.import-lists {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.import-section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  margin-bottom: 6px;
+}
+
+.import-list {
+  min-height: 34px;
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.import-item {
+  padding: 2px 0;
+}
+
+.import-more {
+  opacity: 0.6;
+  padding-top: 4px;
+}
 
 .modal-warn {
   margin-top: 10px;

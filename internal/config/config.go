@@ -477,6 +477,8 @@ func hostFingerprint(h model.Host) string {
 	b.WriteString("|")
 	b.WriteString(h.User)
 	b.WriteString("|")
+	b.WriteString(string(h.Role))
+	b.WriteString("|")
 	b.WriteString(string(h.Driver))
 	b.WriteString("|")
 	b.WriteString(string(h.Auth.Method))

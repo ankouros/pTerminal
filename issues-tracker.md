@@ -24,3 +24,16 @@ Track open issues, proposals, and implementation status for this repo.
 | PT-015 | UX | low | fixed | All modals/popups now mirror the tray icon’s gradient/blur/glow styling so they feel like they derive from the system bar icon menu. | `internal/ui/assets/app.css` |
 | PT-016 | reliability | low | fixed | `INSTALL.sh` now chowns `bin/` artifacts back to the invoking user so future `make` invocations run without permission errors. | `INSTALL.sh`, `README.md` |
 | PT-017 | maintainability | low | fixed | Aligned shared ecosystem contract baseline with samakia-fabric via samakia-specs. | `CONTRACTS.md`, `docs/contracts.md`, `AGENTS.md`, `README.md`, `SECURITY.md`, `CHANGELOG.md` |
+| PT-018 | feature | medium | fixed | Samakia integration scaffolding: host roles, verification quick actions, and design/acceptance flow targets. | `internal/model/node.go`, `internal/ui/assets/app.js`, `scripts/entry-checks/samakia-design-check.sh`, `ROADMAP.md` |
+| PT-019 | feature | medium | fixed | Implement Samakia inventory import helpers (Fabric/Platform). | `internal/config/samakia_import.go`, `internal/ui/window.go`, `internal/ui/assets/app.js`, `docs/concepts/samakia-inventory-import.md` |
+| PT-020 | feature | low | fixed | Add Samakia import match modes and Markdown report export. | `internal/config/samakia_import.go`, `internal/config/samakia_report.go`, `internal/ui/window.go`, `internal/ui/assets/*`, `docs/usage.md` |
+| PT-021 | maintainability | low | fixed | Add testing suite harness, entry checks, and report artifacts under `TESTS/`. | `scripts/tests/run-suite.sh`, `scripts/entry-checks/samakia-testing-check.sh`, `Makefile`, `docs/testing-suite.md` |
+| PT-022 | bug | high | fixed | WebView UI fails to load due to escaped string delimiters in `app.js`. | `internal/ui/assets/app.js` |
+| PT-023 | bug | medium | fixed | New network may be hidden after save if team filter does not match scope; align active team filter to new scope. | `internal/ui/assets/app.js` |
+| PT-024 | bug | medium | fixed | Missing SSH key path now falls back to standard keys and shows a UI popup when none are found. | `internal/sshclient/sshclient.go`, `internal/ui/window.go`, `internal/ui/assets/app.js` |
+| PT-025 | bug | medium | fixed | Update check/install now pushes state updates to the UI to avoid hanging status. | `internal/ui/window.go`, `internal/ui/assets/app.js` |
+| PT-026 | bug | medium | fixed | Update installs now stage a `.next` binary and apply it on restart to avoid in-place replacement hangs. | `internal/ui/window.go`, `internal/update/stage.go`, `internal/app/app.go` |
+| PT-027 | UX | medium | fixed | Update install now shows download/install progress, hides the check button once a release is available, and prompts for restart after staging. | `internal/ui/window.go`, `internal/ui/assets/app.js`, `README.md`, `docs/usage.md` |
+| PT-028 | bug | medium | fixed | Restarting after updates no longer triggers UI freezes or JS notify errors. | `internal/ui/window.go`, `internal/ui/assets/app.js`, `CHANGELOG.md` |
+| PT-029 | bug | medium | fixed | Update restart now relaunches the app instead of only closing. | `internal/ui/window.go`, `internal/ui/assets/app.js` |
+| PT-030 | UX | low | fixed | Update check messaging only appears while a check is running. | `internal/ui/assets/app.js` |

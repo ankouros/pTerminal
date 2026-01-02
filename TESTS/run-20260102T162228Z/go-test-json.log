@@ -1,0 +1,132 @@
+# 2026-01-02T16:22:29Z
++ go test -json ./...
+{"Time":"2026-01-02T18:22:29.24351945+02:00","Action":"start","Package":"github.com/ankouros/pterminal/cmd/pterminal"}
+{"Time":"2026-01-02T18:22:29.243573025+02:00","Action":"output","Package":"github.com/ankouros/pterminal/cmd/pterminal","Output":"?   \tgithub.com/ankouros/pterminal/cmd/pterminal\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.243580279+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/cmd/pterminal","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.24359586+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/app"}
+{"Time":"2026-01-02T18:22:29.243617334+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/app","Output":"?   \tgithub.com/ankouros/pterminal/internal/app\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.243620277+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/app","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.243632216+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/buildinfo"}
+{"Time":"2026-01-02T18:22:29.24363697+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/buildinfo","Output":"?   \tgithub.com/ankouros/pterminal/internal/buildinfo\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.243640246+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/buildinfo","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.243656496+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/cmdclient"}
+{"Time":"2026-01-02T18:22:29.243687659+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/cmdclient","Output":"?   \tgithub.com/ankouros/pterminal/internal/cmdclient\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.243693893+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/cmdclient","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.251540484+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/config"}
+{"Time":"2026-01-02T18:22:29.251651734+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/model"}
+{"Time":"2026-01-02T18:22:29.251699466+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/model","Output":"?   \tgithub.com/ankouros/pterminal/internal/model\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.251708245+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/model","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.251720568+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/p2p"}
+{"Time":"2026-01-02T18:22:29.251727201+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/p2p","Output":"?   \tgithub.com/ankouros/pterminal/internal/p2p\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.251729323+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/p2p","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.253687509+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestStripSecrets"}
+{"Time":"2026-01-02T18:22:29.253717515+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestStripSecrets","Output":"=== RUN   TestStripSecrets\n"}
+{"Time":"2026-01-02T18:22:29.253748278+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestStripSecrets","Output":"--- PASS: TestStripSecrets (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.253752328+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestStripSecrets","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.253757353+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestNormalizeSFTP"}
+{"Time":"2026-01-02T18:22:29.253759537+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestNormalizeSFTP","Output":"=== RUN   TestNormalizeSFTP\n"}
+{"Time":"2026-01-02T18:22:29.253762172+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestNormalizeSFTP","Output":"--- PASS: TestNormalizeSFTP (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.253774175+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestNormalizeSFTP","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.253776833+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryHostList"}
+{"Time":"2026-01-02T18:22:29.253779154+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryHostList","Output":"=== RUN   TestImportSamakiaInventoryHostList\n"}
+{"Time":"2026-01-02T18:22:29.254041717+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryHostList","Output":"--- PASS: TestImportSamakiaInventoryHostList (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.254050957+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryHostList","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.254056542+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryTerraformOutput"}
+{"Time":"2026-01-02T18:22:29.254058508+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryTerraformOutput","Output":"=== RUN   TestImportSamakiaInventoryTerraformOutput\n"}
+{"Time":"2026-01-02T18:22:29.254210955+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryTerraformOutput","Output":"--- PASS: TestImportSamakiaInventoryTerraformOutput (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.254218206+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryTerraformOutput","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.25422246+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryIdempotentUpdateAndRemove"}
+{"Time":"2026-01-02T18:22:29.254224562+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryIdempotentUpdateAndRemove","Output":"=== RUN   TestImportSamakiaInventoryIdempotentUpdateAndRemove\n"}
+{"Time":"2026-01-02T18:22:29.254375629+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryIdempotentUpdateAndRemove","Output":"--- PASS: TestImportSamakiaInventoryIdempotentUpdateAndRemove (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.25438272+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryIdempotentUpdateAndRemove","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.254387923+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotRemoveUnmanaged"}
+{"Time":"2026-01-02T18:22:29.25439005+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotRemoveUnmanaged","Output":"=== RUN   TestImportSamakiaInventoryDoesNotRemoveUnmanaged\n"}
+{"Time":"2026-01-02T18:22:29.254544283+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotRemoveUnmanaged","Output":"--- PASS: TestImportSamakiaInventoryDoesNotRemoveUnmanaged (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.254551716+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotRemoveUnmanaged","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.254554242+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotUpdateUnmanagedNameMatch"}
+{"Time":"2026-01-02T18:22:29.254556349+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotUpdateUnmanagedNameMatch","Output":"=== RUN   TestImportSamakiaInventoryDoesNotUpdateUnmanagedNameMatch\n"}
+{"Time":"2026-01-02T18:22:29.254714252+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotUpdateUnmanagedNameMatch","Output":"--- PASS: TestImportSamakiaInventoryDoesNotUpdateUnmanagedNameMatch (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.254723023+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryDoesNotUpdateUnmanagedNameMatch","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.254725666+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeHost"}
+{"Time":"2026-01-02T18:22:29.254727817+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeHost","Output":"=== RUN   TestImportSamakiaInventoryMatchModeHost\n"}
+{"Time":"2026-01-02T18:22:29.254912667+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeHost","Output":"--- PASS: TestImportSamakiaInventoryMatchModeHost (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.25492088+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeHost","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.254931927+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDRequiresUID"}
+{"Time":"2026-01-02T18:22:29.254934696+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDRequiresUID","Output":"=== RUN   TestImportSamakiaInventoryMatchModeUIDRequiresUID\n"}
+{"Time":"2026-01-02T18:22:29.255084759+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDRequiresUID","Output":"--- PASS: TestImportSamakiaInventoryMatchModeUIDRequiresUID (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.255091173+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDRequiresUID","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.255095437+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDUpdatesManaged"}
+{"Time":"2026-01-02T18:22:29.255097459+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDUpdatesManaged","Output":"=== RUN   TestImportSamakiaInventoryMatchModeUIDUpdatesManaged\n"}
+{"Time":"2026-01-02T18:22:29.255232225+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDUpdatesManaged","Output":"--- PASS: TestImportSamakiaInventoryMatchModeUIDUpdatesManaged (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.25523653+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Test":"TestImportSamakiaInventoryMatchModeUIDUpdatesManaged","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.255238753+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Output":"PASS\n"}
+{"Time":"2026-01-02T18:22:29.255483977+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/config","Output":"ok  \tgithub.com/ankouros/pterminal/internal/config\t0.004s\n"}
+{"Time":"2026-01-02T18:22:29.25574787+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/config","Elapsed":0.004}
+{"Time":"2026-01-02T18:22:29.262550609+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/session"}
+{"Time":"2026-01-02T18:22:29.264287927+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/session","Test":"TestBufferOutputDropsAndMarks"}
+{"Time":"2026-01-02T18:22:29.264316191+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/session","Test":"TestBufferOutputDropsAndMarks","Output":"=== RUN   TestBufferOutputDropsAndMarks\n"}
+{"Time":"2026-01-02T18:22:29.264474421+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/session","Test":"TestBufferOutputDropsAndMarks","Output":"--- PASS: TestBufferOutputDropsAndMarks (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.26449094+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/session","Test":"TestBufferOutputDropsAndMarks","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.264496747+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/session","Output":"PASS\n"}
+{"Time":"2026-01-02T18:22:29.264680303+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/session","Output":"ok  \tgithub.com/ankouros/pterminal/internal/session\t0.002s\n"}
+{"Time":"2026-01-02T18:22:29.264817883+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/session","Elapsed":0.002}
+{"Time":"2026-01-02T18:22:29.275270646+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/sftpclient"}
+{"Time":"2026-01-02T18:22:29.275365918+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/sshclient"}
+{"Time":"2026-01-02T18:22:29.275436052+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/teamrepo"}
+{"Time":"2026-01-02T18:22:29.275457692+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/teamrepo","Output":"?   \tgithub.com/ankouros/pterminal/internal/teamrepo\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.275461836+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/teamrepo","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.275466336+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/terminal"}
+{"Time":"2026-01-02T18:22:29.27546793+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/terminal","Output":"?   \tgithub.com/ankouros/pterminal/internal/terminal\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.275470448+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/terminal","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.275472752+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/ui"}
+{"Time":"2026-01-02T18:22:29.275476935+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/ui","Output":"?   \tgithub.com/ankouros/pterminal/internal/ui\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.275478091+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/ui","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.27548071+02:00","Action":"start","Package":"github.com/ankouros/pterminal/internal/update"}
+{"Time":"2026-01-02T18:22:29.275486611+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/update","Output":"?   \tgithub.com/ankouros/pterminal/internal/update\t[no test files]\n"}
+{"Time":"2026-01-02T18:22:29.275487793+02:00","Action":"skip","Package":"github.com/ankouros/pterminal/internal/update","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.276931782+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestCleanRemotePath"}
+{"Time":"2026-01-02T18:22:29.276941671+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestCleanRemotePath","Output":"=== RUN   TestCleanRemotePath\n"}
+{"Time":"2026-01-02T18:22:29.276960361+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestCleanRemotePath","Output":"--- PASS: TestCleanRemotePath (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.276965315+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestCleanRemotePath","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.276968393+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestSFTPCustomPasswordCache"}
+{"Time":"2026-01-02T18:22:29.276971812+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestSFTPCustomPasswordCache","Output":"=== RUN   TestSFTPCustomPasswordCache\n"}
+{"Time":"2026-01-02T18:22:29.276974913+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestSFTPCustomPasswordCache","Output":"--- PASS: TestSFTPCustomPasswordCache (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.276981251+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sftpclient","Test":"TestSFTPCustomPasswordCache","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.276983865+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sftpclient","Output":"PASS\n"}
+{"Time":"2026-01-02T18:22:29.277096941+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance"}
+{"Time":"2026-01-02T18:22:29.27710507+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance","Output":"=== RUN   TestSSHAuthAcceptance\n"}
+{"Time":"2026-01-02T18:22:29.27713706+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sftpclient","Output":"ok  \tgithub.com/ankouros/pterminal/internal/sftpclient\t0.002s\n"}
+{"Time":"2026-01-02T18:22:29.277197066+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/password"}
+{"Time":"2026-01-02T18:22:29.27720334+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/password","Output":"=== RUN   TestSSHAuthAcceptance/password\n"}
+{"Time":"2026-01-02T18:22:29.277262816+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sftpclient","Elapsed":0.002}
+{"Time":"2026-01-02T18:22:29.279835718+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/password","Output":"--- PASS: TestSSHAuthAcceptance/password (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.27985044+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/password","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.279855497+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/key"}
+{"Time":"2026-01-02T18:22:29.279857811+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/key","Output":"=== RUN   TestSSHAuthAcceptance/key\n"}
+{"Time":"2026-01-02T18:22:29.283147978+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/key","Output":"--- PASS: TestSSHAuthAcceptance/key (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.283156512+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/key","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.28315993+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/agent"}
+{"Time":"2026-01-02T18:22:29.283161032+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/agent","Output":"=== RUN   TestSSHAuthAcceptance/agent\n"}
+{"Time":"2026-01-02T18:22:29.284956851+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/agent","Output":"--- PASS: TestSSHAuthAcceptance/agent (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.284962232+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/agent","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.284964346+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/keyboard-interactive"}
+{"Time":"2026-01-02T18:22:29.284965322+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/keyboard-interactive","Output":"=== RUN   TestSSHAuthAcceptance/keyboard-interactive\n"}
+{"Time":"2026-01-02T18:22:29.285932995+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/keyboard-interactive","Output":"--- PASS: TestSSHAuthAcceptance/keyboard-interactive (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.285939365+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance/keyboard-interactive","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.285943302+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance","Output":"--- PASS: TestSSHAuthAcceptance (0.01s)\n"}
+{"Time":"2026-01-02T18:22:29.285944643+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestSSHAuthAcceptance","Elapsed":0.01}
+{"Time":"2026-01-02T18:22:29.285946318+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive"}
+{"Time":"2026-01-02T18:22:29.285947206+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive","Output":"=== RUN   TestAuthMethodKeyboardInteractive\n"}
+{"Time":"2026-01-02T18:22:29.285949127+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/no_provider"}
+{"Time":"2026-01-02T18:22:29.285950045+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/no_provider","Output":"=== RUN   TestAuthMethodKeyboardInteractive/no_provider\n"}
+{"Time":"2026-01-02T18:22:29.285951672+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/no_provider","Output":"--- PASS: TestAuthMethodKeyboardInteractive/no_provider (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.285953037+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/no_provider","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.285954406+02:00","Action":"run","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/with_provider"}
+{"Time":"2026-01-02T18:22:29.285955305+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/with_provider","Output":"=== RUN   TestAuthMethodKeyboardInteractive/with_provider\n"}
+{"Time":"2026-01-02T18:22:29.285957228+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/with_provider","Output":"--- PASS: TestAuthMethodKeyboardInteractive/with_provider (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.285958393+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive/with_provider","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.285962445+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive","Output":"--- PASS: TestAuthMethodKeyboardInteractive (0.00s)\n"}
+{"Time":"2026-01-02T18:22:29.285964479+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Test":"TestAuthMethodKeyboardInteractive","Elapsed":0}
+{"Time":"2026-01-02T18:22:29.285965494+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Output":"PASS\n"}
+{"Time":"2026-01-02T18:22:29.286227432+02:00","Action":"output","Package":"github.com/ankouros/pterminal/internal/sshclient","Output":"ok  \tgithub.com/ankouros/pterminal/internal/sshclient\t0.011s\n"}
+{"Time":"2026-01-02T18:22:29.286753424+02:00","Action":"pass","Package":"github.com/ankouros/pterminal/internal/sshclient","Elapsed":0.011}

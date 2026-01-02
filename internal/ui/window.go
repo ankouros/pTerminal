@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -184,6 +185,7 @@ type Window struct {
 	resizeCh chan resizeMsg
 
 	windowHidden atomic.Bool
+	closed       atomic.Bool
 	exePath      string
 
 	update   updateState
@@ -207,6 +209,9 @@ type updateState struct {
 	Checking     bool
 	Installing   bool
 	Error        string
+	Phase        string
+	Downloaded   int64
+	Total        int64
 	LastCheck    time.Time
 	InstalledTag string
 }
@@ -226,12 +231,29 @@ func (w *Window) updatePayload() rpcResp {
 		"checking":       w.update.Checking,
 		"installing":     w.update.Installing,
 		"error":          w.update.Error,
+		"phase":          w.update.Phase,
+		"downloaded":     w.update.Downloaded,
+		"total":          w.update.Total,
 		"installedTag":   w.update.InstalledTag,
 	}
 	if !w.update.LastCheck.IsZero() {
 		info["lastCheck"] = w.update.LastCheck.Format(time.RFC3339)
 	}
 	return info
+}
+
+func (w *Window) pushUpdateState() {
+	if w == nil || w.wv == nil || w.closed.Load() {
+		return
+	}
+	payload := rpcResp{"update": w.updatePayload()}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	w.wv.Dispatch(func() {
+		w.wv.Eval(fmt.Sprintf("window.__setUpdateState && window.__setUpdateState(%s);", string(b)))
+	})
 }
 
 func isNewVersion(latest, current string) bool {
@@ -307,6 +329,11 @@ type rpcReq struct {
 	To   string `json:"to,omitempty"`
 	Dir  string `json:"dir,omitempty"`
 	Name string `json:"name,omitempty"`
+
+	NetworkName string `json:"networkName,omitempty"`
+	MatchMode   string `json:"matchMode,omitempty"`
+	Summary     any    `json:"summary,omitempty"`
+	Format      string `json:"format,omitempty"`
 
 	UploadID string `json:"uploadId,omitempty"`
 }
@@ -488,6 +515,57 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 				"backupPath":   backup,
 				"disconnected": true,
 			})
+
+		case "samakia_inventory_import_pick":
+			path := w.pickSamakiaInventoryPath()
+			if path == "" {
+				return ok(rpcResp{"canceled": true})
+			}
+
+			current := w.mgr.Config()
+			updated, summary, err := config.ImportSamakiaInventory(current, path, req.NetworkName, req.MatchMode)
+			if err != nil {
+				return fail("import_failed", rpcResp{"detail": err.Error()})
+			}
+
+			if err := config.Save(updated); err != nil {
+				return fail("config_save_failed", rpcResp{"detail": err.Error()})
+			}
+
+			w.mgr.SetConfig(updated)
+			w.sftp.SetConfig(updated)
+			if w.p2p != nil {
+				w.p2p.SetConfig(updated)
+				w.p2p.SyncNow()
+			}
+
+			return ok(rpcResp{
+				"config":     updated,
+				"importPath": path,
+				"summary":    summary,
+			})
+
+		case "samakia_import_report":
+			raw, _ := json.Marshal(req.Summary)
+			var summary config.SamakiaImportSummary
+			if err := json.Unmarshal(raw, &summary); err != nil {
+				return fail("report_failed", rpcResp{"detail": "invalid summary payload"})
+			}
+
+			format := strings.ToLower(strings.TrimSpace(req.Format))
+			var path string
+			var err error
+			if format == "csv" {
+				path, err = config.ExportSamakiaImportReportCSV(summary, req.Path)
+			} else if format == "md" || format == "markdown" {
+				path, err = config.ExportSamakiaImportReportMarkdown(summary, req.Path)
+			} else {
+				path, err = config.ExportSamakiaImportReport(summary, req.Path)
+			}
+			if err != nil {
+				return fail("report_failed", rpcResp{"detail": err.Error()})
+			}
+			return ok(rpcResp{"path": path})
 
 		case "sftp_ls":
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -867,6 +945,13 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 					resp["fingerprint"] = mismatch.Fingerprint
 				}
 
+				var missingKey *sshclient.ErrKeyNotFound
+				if errors.As(info.Err, &missingKey) {
+					resp["errCode"] = "key_not_found"
+					resp["keyPath"] = missingKey.Requested
+					resp["keyChecked"] = missingKey.Checked
+				}
+
 				if info.LastErr == "password_required" {
 					resp["errCode"] = "password_required"
 				}
@@ -945,6 +1030,14 @@ func NewWindow(mgr *session.Manager, p2pSvc *p2p.Service) (*Window, error) {
 		case "update_install":
 			go w.runUpdateInstall()
 			return ok(rpcResp{"update": w.updatePayload()})
+
+		case "app_restart":
+			go w.requestRestart()
+			return ok(nil)
+
+		case "app_quit":
+			go w.requestQuit()
+			return ok(nil)
 
 		default:
 			return fail("unknown_rpc", nil)
@@ -1103,17 +1196,23 @@ func (w *Window) runUpdateCheck(force bool) {
 	}
 	w.update.Checking = true
 	w.update.Error = ""
+	w.update.Phase = "checking"
+	w.update.Downloaded = 0
+	w.update.Total = 0
 	w.updateMu.Unlock()
+	w.pushUpdateState()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	rel, err := update.Latest(ctx)
 	w.updateMu.Lock()
-	defer w.updateMu.Unlock()
 	w.update.Checking = false
 	if err != nil {
 		w.update.Error = err.Error()
+		w.update.Phase = ""
+		w.updateMu.Unlock()
+		w.pushUpdateState()
 		return
 	}
 
@@ -1135,7 +1234,12 @@ func (w *Window) runUpdateCheck(force bool) {
 		w.update.AssetURL = ""
 	}
 
+	w.update.Phase = ""
+	w.update.Downloaded = 0
+	w.update.Total = 0
 	w.update.LastCheck = time.Now()
+	w.updateMu.Unlock()
+	w.pushUpdateState()
 }
 
 func (w *Window) runUpdateInstall() {
@@ -1143,24 +1247,33 @@ func (w *Window) runUpdateInstall() {
 	if w.update.Installing || w.update.AssetURL == "" {
 		w.update.Error = "no update asset available"
 		w.update.Installing = false
+		w.update.Phase = ""
 		w.updateMu.Unlock()
+		w.pushUpdateState()
 		return
 	}
 	w.update.Installing = true
 	w.update.Error = ""
+	w.update.Phase = "downloading"
+	w.update.Downloaded = 0
+	w.update.Total = 0
 	assetURL := w.update.AssetURL
 	w.updateMu.Unlock()
+	w.pushUpdateState()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	path, err := downloadAsset(ctx, assetURL)
+	path, err := downloadAsset(ctx, assetURL, func(downloaded, total int64) {
+		w.setUpdateProgress("downloading", downloaded, total)
+	})
 	if err != nil {
 		w.setUpdateError(err.Error())
 		return
 	}
 	defer os.Remove(path)
 
+	w.setUpdateProgress("installing", -1, -1)
 	binaryPath, err := extractPortableBinary(path)
 	if err != nil {
 		w.setUpdateError(err.Error())
@@ -1172,34 +1285,71 @@ func (w *Window) runUpdateInstall() {
 	if dest == "" {
 		dest = filepath.Join(".", "bin", "pterminal")
 	}
+	staged := dest + ".next"
 
-	if err := installBinary(binaryPath, dest); err != nil {
+	if err := installBinary(binaryPath, staged); err != nil {
 		w.setUpdateError(err.Error())
 		return
 	}
 
-	w.setUpdateInstalled()
+	w.setUpdateStaged(staged)
 }
 
 func (w *Window) setUpdateError(msg string) {
 	w.updateMu.Lock()
 	w.update.Error = msg
 	w.update.Installing = false
+	w.update.Phase = "error"
 	w.updateMu.Unlock()
+	w.pushUpdateState()
 	w.notifyUpdateError("Update failed: " + msg)
 }
 
-func (w *Window) setUpdateInstalled() {
+func (w *Window) setUpdateStaged(stagedPath string) {
 	w.updateMu.Lock()
 	w.update.Installing = false
 	w.update.HasUpdate = false
 	w.update.InstalledTag = w.update.LatestTag
+	w.update.Phase = "staged"
+	tag := w.update.LatestTag
 	w.updateMu.Unlock()
-	message := "Update installed (" + w.update.LatestTag + "). Restarting the app will run the new version."
+	w.pushUpdateState()
+	message := "Update staged (" + tag + "). Restarting the app will run the new version."
+	if stagedPath != "" {
+		message += "\nStaged binary: " + stagedPath
+	}
 	w.notifyUpdateSuccess(message)
+	w.promptUpdateRestart(tag)
 }
 
-func downloadAsset(ctx context.Context, url string) (string, error) {
+func (w *Window) setUpdateProgress(phase string, downloaded, total int64) {
+	w.updateMu.Lock()
+	w.update.Phase = phase
+	if downloaded >= 0 {
+		w.update.Downloaded = downloaded
+	}
+	if total >= 0 {
+		w.update.Total = total
+	}
+	w.updateMu.Unlock()
+	w.pushUpdateState()
+}
+
+func (w *Window) promptUpdateRestart(tag string) {
+	if w == nil || w.wv == nil || w.closed.Load() {
+		return
+	}
+	payload := rpcResp{"tag": tag}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	w.wv.Dispatch(func() {
+		w.wv.Eval(fmt.Sprintf("window.__promptUpdateRestart && window.__promptUpdateRestart(%s);", string(b)))
+	})
+}
+
+func downloadAsset(ctx context.Context, url string, onProgress func(downloaded, total int64)) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -1222,10 +1372,41 @@ func downloadAsset(ctx context.Context, url string) (string, error) {
 	}
 	defer tmp.Close()
 
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		return "", err
+	total := resp.ContentLength
+	if total < 0 {
+		total = 0
+	}
+	if onProgress != nil {
+		onProgress(0, total)
 	}
 
+	buf := make([]byte, 32*1024)
+	var downloaded int64
+	last := time.Now()
+
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := tmp.Write(buf[:n]); werr != nil {
+				return "", werr
+			}
+			downloaded += int64(n)
+			if onProgress != nil && (downloaded == total || time.Since(last) > 200*time.Millisecond) {
+				onProgress(downloaded, total)
+				last = time.Now()
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				break
+			}
+			return "", rerr
+		}
+	}
+
+	if onProgress != nil {
+		onProgress(downloaded, total)
+	}
 	return tmp.Name(), nil
 }
 
@@ -1318,17 +1499,48 @@ func (w *Window) notifyUpdateError(msg string) {
 }
 
 func (w *Window) runJSNotify(fn, msg string) {
-	if w.wv == nil {
+	if w.wv == nil || w.closed.Load() {
 		return
 	}
 	quoted := strconv.Quote(msg)
 	w.wv.Dispatch(func() {
-		w.wv.Eval(fmt.Sprintf("%s(%s);", fn, quoted))
+		w.wv.Eval(fmt.Sprintf("window.%s && window.%s(%s);", fn, fn, quoted))
 	})
 }
 
+func (w *Window) requestQuit() {
+	if w == nil || w.closed.Load() {
+		return
+	}
+	w.closed.Store(true)
+	if w.wv != nil {
+		w.wv.Terminate()
+	}
+}
+
+func (w *Window) requestRestart() {
+	if w == nil || w.closed.Load() {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		w.notifyUpdateError("Restart failed: " + err.Error())
+		return
+	}
+	cmd := exec.Command(exe, os.Args[1:]...)
+	if wd, err := os.Getwd(); err == nil {
+		cmd.Dir = wd
+	}
+	cmd.Env = os.Environ()
+	if err := cmd.Start(); err != nil {
+		w.notifyUpdateError("Restart failed: " + err.Error())
+		return
+	}
+	w.requestQuit()
+}
+
 func (w *Window) hideFromTray() {
-	if w == nil {
+	if w == nil || w.closed.Load() {
 		return
 	}
 	hideGtkWindow(w.wv)
@@ -1336,7 +1548,7 @@ func (w *Window) hideFromTray() {
 }
 
 func (w *Window) showFromTray() {
-	if w == nil {
+	if w == nil || w.closed.Load() {
 		return
 	}
 	showGtkWindow(w.wv)
@@ -1345,6 +1557,9 @@ func (w *Window) showFromTray() {
 }
 
 func (w *Window) closeFromTray() {
+	if w == nil || w.closed.Load() {
+		return
+	}
 	if !confirmCloseDialog() {
 		return
 	}
@@ -1398,7 +1613,7 @@ func (w *Window) flushHost(hostID, tabID int) bool {
 }
 
 func (w *Window) pushPTYB64Batch(hostID, tabID int, chunks []string) {
-	if len(chunks) == 0 {
+	if len(chunks) == 0 || w == nil || w.wv == nil || w.closed.Load() {
 		return
 	}
 
@@ -1454,6 +1669,10 @@ func (w *Window) buildInlinedHTML() (string, error) {
 
 func (w *Window) Run() { w.wv.Run() }
 func (w *Window) Close() {
+	if w == nil {
+		return
+	}
+	w.closed.Store(true)
 	if w.flushCancel != nil {
 		w.flushCancel()
 	}

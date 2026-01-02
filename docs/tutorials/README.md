@@ -6,5 +6,6 @@ Start with:
 
 - `../usage.md`
 - `../onboarding.md`
+- `./samakia-acceptance.md`
 - `./release_README.md`
 - `./docker-repository-overview.md`

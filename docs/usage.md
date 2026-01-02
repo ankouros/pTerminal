@@ -22,9 +22,33 @@ This guide covers the end-user workflow for pTerminal.
 
 The CLI test suite (`go test ./internal/sshclient`) now runs `internal/sshclient/sshclient_auth_acceptance_test.go`, which exercises every supported SSH auth method to guard against regressions.
 
+## Samakia Host Roles
+
+- Use the Host Role field to tag nodes as `fabric` or `platform` when connecting to Samakia Fabric or Samakia Platform.
+- Roles label hosts in the UI and anchor upcoming verification flows for Samakia environments.
+- Leave the role as `generic` for non-Samakia nodes.
+
+## Samakia Verification Quick Actions
+
+- Right-click a Samakia-tagged host to add or run a role-specific verification script.
+- Verification scripts are read-only by default and execute in the active terminal.
+- Scripts are saved in the Scripts panel and can be edited if needed.
+
+## Samakia Inventory Import
+
+- Use **Samakia Import** in the top bar to import Fabric/Platform inventories.
+- Imports create or update a named network without overwriting existing config.
+- Imported hosts default to SSH key auth and `known_hosts` verification.
+- Imports update existing Samakia hosts in the target network and mark missing imported hosts as deleted.
+- Hosts not previously imported are not removed.
+- Choose a match mode: hostname (name-first), host address, or UID.
+- UID matching requires each inventory entry to include a stable `uid` (or `id`/`vmid`).
+- A summary modal shows counts, host-level changes, and provides JSON/CSV/Markdown export plus clipboard copy.
+
 ## Version Information
 
 - Run `./bin/pterminal --version` (or `pterminal --version` if the binary is on your `$PATH`) to print the embedded version, git commit, and build timestamp without opening the UI.
+- Updates are staged next to the current binary as `pterminal.next` and applied on restart.
 
 ## Tray Icon
 
@@ -35,7 +59,7 @@ The CLI test suite (`go test ./internal/sshclient`) now runs `internal/sshclient
 - The tray menu now also includes an "About pTerminal" entry that pops up the embedded version, git commit, and build timestamp.
 - The About modal mirrors other pTerminal popups and now shows that same metadata alongside the latest GitHub release tag, release notes snippet, and links to check/install updates so you never have to guess what version is running.
 - Popups now reuse the tray icon’s gradient, blur, and glow treatment so they feel visually anchored to the system bar icon.
-- The navigation bar shows update status text plus “Check updates” / “Install update” buttons powered by GitHub releases so you can download/install the new portable bundle without manual downloads.
+- The navigation bar shows update status text and update controls; once a new release is available the check button hides, install shows download/install progress, and a restart prompt appears after staging the update (the restart relaunches pTerminal).
 
 ## Host Keys
 
@@ -48,6 +72,7 @@ The CLI test suite (`go test ./internal/sshclient`) now runs `internal/sshclient
 - Credentials are kept in memory only.
 - You will be prompted when needed (SSH password, key passphrase, SFTP custom password).
 - Exports and config files never store secrets.
+- If a key path is missing, pTerminal checks standard `~/.ssh` key files and prompts you to update the host if none are found.
 
 ## Files (SFTP)
 

@@ -2,6 +2,11 @@
 
 This release contains a single `pterminal` executable with embedded UI assets (HTML/CSS/JS and xterm.js addons).
 
+## Minor release highlights
+
+- Update checks now surface progress and clear messaging while downloads/installations run.
+- Staged updates prompt for restart and relaunch pTerminal to apply the new binary.
+
 ## What is embedded
 
 - pTerminal UI assets via Go `go:embed`

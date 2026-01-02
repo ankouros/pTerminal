@@ -36,6 +36,9 @@ make fmt
 make vet
 go test ./...
 go test ./internal/sshclient
+make samakia.design.check
+make samakia.verify
+make samakia.accept
 ```
 
 ## Key Environment Variables

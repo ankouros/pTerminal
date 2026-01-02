@@ -1,6 +1,7 @@
 # pTerminal (Go)
 
 Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written entirely in Go.
+Official Samakia tool for connecting to and verifying nodes in samakia-fabric and samakia-platform environments.
 
 ## Contents
 
@@ -26,6 +27,9 @@ Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written
 - Built-in **SFTP file manager** (Files tab) with search, context menu, drag & drop upload, download to `~/Downloads`, and inline edit/save.
 - JSON config stored in `~/.config/pterminal/pterminal.json`, editable via UI or text editor; import/export helpers included.
 - Host key verification UX (unknown/mismatched dialog, trust storage) and per-host auth method selection.
+- Samakia host role tagging for Fabric/Platform nodes to anchor verification workflows.
+- Samakia verification quick actions and script templates for Fabric/Platform nodes.
+- Samakia inventory import helper for Fabric/Platform host lists.
 - Ships as a single binary with embedded assets plus Flatpak/portable bundles when needed; no external GUI frameworks required.
 
 ## Architecture & constraints
@@ -42,6 +46,7 @@ Persistent multi-node SSH terminals + SFTP in a single Linux WebView app written
 - `CONTRACTS.md` and `/home/aggelos/samakia-specs/specs/base/ecosystem.yaml` define the shared contract baseline.
 - `AGENTS.md` defines non-negotiable agent and contributor rules.
 - `SECURITY.md` captures the security model and disclosure expectations.
+- `ARCHITECTURE.md` and `DECISIONS.md` capture design intent and ADRs.
 - `CHANGELOG.md` tracks repo-visible changes.
 - `docs/README.md` indexes docs and runbooks.
 - `docs/PRINCIPLES.md` and `docs/glossary.md` define local norms and terminology.
@@ -83,7 +88,7 @@ On Linux the app also creates a system tray icon next to the clock; use it to sh
 - Closing the main window merely hides it to the tray so the icon and its menu stay available for reopening or exiting.
 - The tray menu also exposes an "About pTerminal" entry that shows the embedded version, commit, and build timestamp so you can confirm what’s running without relaunching.
 - That About popup now matches other pTerminal dialogs and also surfaces the latest GitHub release tag, notes, and install availability so you can immediately see what’s running and whether a newer bundle exists without leaving the UI.
-- The navigation bar additionally exposes update status text with “Check updates” and “Install update” buttons powered by GitHub releases so you can download/install the latest portable bundle without leaving the UI.
+- The navigation bar additionally exposes update status text with GitHub-powered update controls; once a new release is available the check button hides, install shows download/install progress, and a restart prompt appears after staging the update (the restart relaunches pTerminal).
 - All popups now borrow the tray icon’s accent colors, blur, and glow so dialogs look and feel like they come from the system bar icon.
 
 Run `./bin/pterminal --version` (or `pterminal --version`) to see the embedded version, git commit, and build timestamp before launching the UI.
@@ -212,6 +217,9 @@ docker run --rm \
 - `make fmt` / `make vet` – gofmt + `go vet`
 - `go test ./...` – run package tests (config/session/sftp have coverage)
 - `go test ./internal/sshclient` – exercises the SSH auth acceptance test for password/key/agent/keyboard-interactive flows
+- `make samakia.design.check` – validate Samakia design entry points
+- `make samakia.verify` – run formatting, vetting, and tests
+- `make samakia.accept` – run design check + verify
 - `make release` / `make portable` / `make flatpak` – produce distributable bundles
 
 Before sending patches, run `make fmt` and `make vet` (mirrors CI). For UI/asset edits, ensure the `go:embed` lists in `internal/ui/assets` stay in sync.

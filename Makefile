@@ -24,7 +24,7 @@ PTERMINAL_GOCACHE := $(CACHE_ROOT)/go-build
 PTERMINAL_GOMODCACHE := $(CACHE_ROOT)/go-mod
 PTERMINAL_PKGCONFIG := $(CACHE_ROOT)/pkgconfig
 
-.PHONY: build run clean assets fmt vet release portable flatpak publish-docker specs-update sync-contracts
+.PHONY: build run clean assets fmt vet release portable flatpak publish-docker specs-update sync-contracts tests.report samakia.design.check samakia.verify samakia.accept samakia.testing.check samakia.testing.verify samakia.testing.accept
 
 build:
 	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
@@ -40,7 +40,7 @@ assets:
 	bash scripts/fetch_assets.sh
 
 fmt:
-	gofmt -w .
+	@bash scripts/gofmt.sh .
 
 vet:
 	@mkdir -p "$(PTERMINAL_GOCACHE)" "$(PTERMINAL_GOMODCACHE)" "$(PTERMINAL_PKGCONFIG)"
@@ -103,3 +103,24 @@ specs-update:
 
 sync-contracts:
 	@bash scripts/sync-contracts.sh
+
+samakia.design.check:
+	@bash scripts/entry-checks/samakia-design-check.sh
+
+samakia.verify: fmt vet
+	go test ./...
+
+samakia.accept: samakia.design.check samakia.verify
+	@echo "Samakia acceptance complete."
+
+tests.report:
+	@bash scripts/tests/run-suite.sh
+
+samakia.testing.check:
+	@bash scripts/entry-checks/samakia-testing-check.sh
+
+samakia.testing.verify: samakia.testing.check tests.report
+	@echo "Samakia testing verification complete."
+
+samakia.testing.accept: samakia.testing.verify
+	@echo "Samakia testing suite acceptance complete."

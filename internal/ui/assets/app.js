@@ -32,6 +32,232 @@
         }[m])
     );
 
+  const formatHostRole = (role) => {
+    switch (role) {
+      case "fabric":
+        return "fabric";
+      case "platform":
+        return "platform";
+      default:
+        return "";
+    }
+  };
+
+  function formatSamakiaImportSummary(summary) {
+    if (!summary) return "Samakia inventory imported.";
+    const added = Number(summary.added) || 0;
+    const updated = Number(summary.updated) || 0;
+    const skipped = Number(summary.skipped) || 0;
+    const removed = Number(summary.removed) || 0;
+    const name = summary.networkName || "Samakia Inventory";
+    const source = summary.source ? ` (${summary.source})` : "";
+    return `Imported ${added} host(s) into ${name}${source}. Updated ${updated}, skipped ${skipped}, removed ${removed}.`;
+  }
+
+  function formatRoleCounts(roleCounts) {
+    if (!roleCounts) return "—";
+    const entries = Object.entries(roleCounts)
+      .map(([role, count]) => [role, Number(count) || 0])
+      .filter(([, count]) => count > 0);
+    if (!entries.length) return "—";
+    return entries.map(([role, count]) => `${role}: ${count}`).join(", ");
+  }
+
+  const samakiaMatchModeLabels = {
+    hostname: "Hostname (name-first)",
+    host: "Host address",
+    uid: "UID",
+  };
+
+  function formatSamakiaMatchMode(mode) {
+    const key = String(mode || "").toLowerCase();
+    return samakiaMatchModeLabels[key] || samakiaMatchModeLabels.hostname;
+  }
+
+  function formatImportEntry(entry) {
+    if (!entry) return "—";
+    const name = String(entry.name || entry.host || "unknown");
+    const host = entry.host ? String(entry.host) : "";
+    const port = entry.port ? `:${entry.port}` : "";
+    const user = entry.user ? String(entry.user) : "";
+    const addr = host ? `${user ? user + "@" : ""}${host}${port}` : "";
+    const role = entry.role ? ` · ${entry.role}` : "";
+    return `${name}${addr ? " · " + addr : ""}${role}`;
+  }
+
+  function renderSamakiaImportList(targetId, items) {
+    const node = el(targetId);
+    if (!node) return;
+    node.innerHTML = "";
+
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      node.textContent = "—";
+      return;
+    }
+
+    const maxItems = 12;
+    list.slice(0, maxItems).forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "import-item";
+      row.textContent = formatImportEntry(entry);
+      node.appendChild(row);
+    });
+
+    if (list.length > maxItems) {
+      const more = document.createElement("div");
+      more.className = "import-more";
+      more.textContent = `+${list.length - maxItems} more`;
+      node.appendChild(more);
+    }
+  }
+
+  function buildSamakiaReportText(summary, importPath) {
+    const lines = [];
+    const name = summary?.networkName || "Samakia Inventory";
+    lines.push("# Samakia Import Report");
+    lines.push("");
+    lines.push(`- Network: ${name}`);
+    if (summary?.matchMode) {
+      lines.push(`- Match mode: ${formatSamakiaMatchMode(summary.matchMode)}`);
+    }
+    if (summary?.source) lines.push(`- Source: ${summary.source}`);
+    if (importPath) lines.push(`- Import path: ${importPath}`);
+    lines.push(`- Added: ${summary?.added ?? 0}`);
+    lines.push(`- Updated: ${summary?.updated ?? 0}`);
+    lines.push(`- Skipped: ${summary?.skipped ?? 0}`);
+    lines.push(`- Removed: ${summary?.removed ?? 0}`);
+    const roles = formatRoleCounts(summary?.roleCounts);
+    if (roles && roles !== "—") lines.push(`- Roles: ${roles}`);
+
+    const appendSection = (title, items) => {
+      if (!Array.isArray(items) || !items.length) return;
+      lines.push("");
+      lines.push(`## ${title}`);
+      items.forEach((entry) => lines.push(`- ${formatImportEntry(entry)}`));
+    };
+
+    appendSection("Added hosts", summary?.addedHosts);
+    appendSection("Updated hosts", summary?.updatedHosts);
+    appendSection("Removed hosts", summary?.removedHosts);
+    return lines.join("\n");
+  }
+
+  const samakiaVerifyTemplates = {
+    fabric: {
+      name: "Samakia Fabric Verify",
+      description: "Read-only checks for Samakia Fabric nodes.",
+      command: [
+        "echo \"[fabric] identity\"",
+        "hostname",
+        "uname -a",
+        "cat /etc/os-release",
+        "echo \"[fabric] time\"",
+        "date -Iseconds",
+        "echo \"[fabric] network\"",
+        "ip -br addr",
+        "ip route",
+      ].join("\n"),
+    },
+    platform: {
+      name: "Samakia Platform Verify",
+      description: "Read-only checks for Samakia Platform nodes.",
+      command: [
+        "echo \"[platform] identity\"",
+        "hostname",
+        "uname -a",
+        "cat /etc/os-release",
+        "echo \"[platform] services\"",
+        "systemctl --no-pager --full --state=running --type=service | head -n 20 || true",
+        "echo \"[platform] network\"",
+        "ip -br addr",
+        "ip route",
+      ].join("\n"),
+    },
+  };
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function getSamakiaVerifyTemplate(host) {
+    const role = host?.role || "";
+    if (role !== "fabric" && role !== "platform") return null;
+    return samakiaVerifyTemplates[role] || null;
+  }
+
+  function resolveSamakiaScriptScope(host) {
+    const scope = host?.scope === "team" ? "team" : "private";
+    const teamId = scope === "team" ? host?.teamId || "" : "";
+    return { scope, teamId };
+  }
+
+  function findSamakiaVerifyScript(host, template) {
+    const { scope, teamId } = resolveSamakiaScriptScope(host);
+    return (config?.scripts || []).find(
+      (script) =>
+        !script?.deleted &&
+        script?.name === template.name &&
+        (script?.scope || "private") === scope &&
+        (script?.teamId || "") === teamId
+    );
+  }
+
+  function ensureSamakiaVerifyScript(host) {
+    const template = getSamakiaVerifyTemplate(host);
+    if (!template) return null;
+
+    const existing = findSamakiaVerifyScript(host, template);
+    if (existing) return existing;
+
+    const { scope, teamId } = resolveSamakiaScriptScope(host);
+    config.scripts = config.scripts || [];
+    const script = {
+      id: "",
+      name: template.name,
+      command: template.command,
+      description: template.description,
+      scope,
+      teamId,
+    };
+    config.scripts.push(script);
+    saveConfig();
+    return script;
+  }
+
+  async function waitForConnected(hostId, tabId, timeoutMs = 10000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      try {
+        const state = await rpc({ type: "state", hostId, tabId });
+        if (state?.state === "connected") return true;
+      } catch {}
+      await sleep(400);
+    }
+    return false;
+  }
+
+  async function runSamakiaVerify(host) {
+    const template = getSamakiaVerifyTemplate(host);
+    if (!template) {
+      notifyWarn("Samakia role is not set for this host.");
+      return;
+    }
+
+    const script = ensureSamakiaVerifyScript(host);
+    if (!script) return;
+
+    if (activeHostId !== host.id || !activeTermTabId || activeState !== "connected") {
+      connectHost(host);
+      const tabId = activeTermTabId || 1;
+      const connected = await waitForConnected(host.id, tabId);
+      if (!connected) {
+        notifyWarn("Connect to the host before running verification.");
+        return;
+      }
+    }
+
+    runScript(script);
+  }
+
   let toastSeq = 0;
 
   function notify(message, type = "info", opts = {}) {
@@ -100,6 +326,8 @@
   const notifySuccess = (msg, opts) => notify(msg, "success", opts);
   const notifyWarn = (msg, opts) => notify(msg, "warn", opts);
   const notifyError = (msg, opts) => notify(msg, "error", opts);
+  window.notifySuccess = notifySuccess;
+  window.notifyError = notifyError;
 
   let confirmResolver = null;
   let promptResolver = null;
@@ -152,6 +380,78 @@
       promptResolver = null;
       resolve(value);
     }
+  }
+
+  let samakiaImportSettingsResolver = null;
+
+  function samakiaImportSettingsDialog(
+    defaultName = "Samakia Inventory",
+    defaultMode = "hostname"
+  ) {
+    return new Promise((resolve) => {
+      samakiaImportSettingsResolver = resolve;
+      const input = el("samakia-import-network-input");
+      const select = el("samakia-import-match-mode");
+      if (input) {
+        input.value = defaultName || "Samakia Inventory";
+      }
+      if (select) {
+        select.value = defaultMode || "hostname";
+      }
+      el("samakia-import-settings-modal").classList.remove("hidden");
+      setTimeout(() => input?.focus?.(), 0);
+      input?.select?.();
+    });
+  }
+
+  function closeSamakiaImportSettings(result) {
+    const modal = el("samakia-import-settings-modal");
+    if (modal) modal.classList.add("hidden");
+    if (samakiaImportSettingsResolver) {
+      const resolve = samakiaImportSettingsResolver;
+      samakiaImportSettingsResolver = null;
+      resolve(result);
+    }
+  }
+
+  let samakiaImportSummary = null;
+  let samakiaImportPath = "";
+  let lastSamakiaImportMatchMode = "hostname";
+
+  function openSamakiaImportSummary(summary, importPath) {
+    samakiaImportSummary = summary || null;
+    samakiaImportPath = importPath || "";
+    el("samakia-import-network").textContent =
+      summary?.networkName || "Samakia Inventory";
+    el("samakia-import-source").textContent = summary?.source || "unknown";
+    el("samakia-import-match-mode-value").textContent = formatSamakiaMatchMode(
+      summary?.matchMode
+    );
+    el("samakia-import-path").textContent = samakiaImportPath;
+    el("samakia-import-added").textContent = String(summary?.added ?? 0);
+    el("samakia-import-updated").textContent = String(summary?.updated ?? 0);
+    el("samakia-import-skipped").textContent = String(summary?.skipped ?? 0);
+    el("samakia-import-removed").textContent = String(summary?.removed ?? 0);
+    el("samakia-import-roles").textContent = formatRoleCounts(
+      summary?.roleCounts
+    );
+    renderSamakiaImportList("samakia-import-added-list", summary?.addedHosts);
+    renderSamakiaImportList(
+      "samakia-import-updated-list",
+      summary?.updatedHosts
+    );
+    renderSamakiaImportList(
+      "samakia-import-removed-list",
+      summary?.removedHosts
+    );
+    el("samakia-import-modal").classList.remove("hidden");
+  }
+
+  function closeSamakiaImportSummary() {
+    const modal = el("samakia-import-modal");
+    if (modal) modal.classList.add("hidden");
+    samakiaImportSummary = null;
+    samakiaImportPath = "";
   }
 
   const textEncoder = new TextEncoder();
@@ -208,6 +508,9 @@
     releaseUrl: "",
     releaseNotes: "",
     error: "",
+    phase: "",
+    downloaded: 0,
+    total: 0,
   };
   let lastUpdateError = "";
   let aboutInfo = {
@@ -231,6 +534,9 @@
       releaseUrl: info.releaseUrl || "",
       releaseNotes: info.notes || "",
       error: info.error || "",
+      phase: info.phase || "",
+      downloaded: Number(info.downloaded) || 0,
+      total: Number(info.total) || 0,
     };
     if (updateInfo.error && updateInfo.error !== lastUpdateError) {
       lastUpdateError = updateInfo.error;
@@ -240,6 +546,33 @@
     renderAboutUpdateInfo();
   }
 
+  window.__setUpdateState = (payload) => setUpdateState(payload);
+
+  window.__promptUpdateRestart = (payload) => {
+    const tag = payload?.tag ? ` ${payload.tag}` : "";
+    const message = `Update${tag} ready. Restart pTerminal now?`;
+    (async () => {
+      const ok = await confirmDialog(message, {
+        okText: "Restart",
+        cancelText: "Later",
+      });
+      if (!ok) return;
+      try {
+        await rpc({ type: "app_restart" });
+      } catch (err) {
+        notifyError("Failed to restart pTerminal.");
+      }
+    })();
+  };
+
+  function formatUpdateProgress() {
+    const downloaded = Number(updateInfo.downloaded) || 0;
+    const total = Number(updateInfo.total) || 0;
+    if (downloaded <= 0 && total <= 0) return "";
+    if (total > 0) return `${formatBytes(downloaded)} / ${formatBytes(total)}`;
+    return `${formatBytes(downloaded)} downloaded`;
+  }
+
   function renderUpdateWidget() {
     const widget = el("update-widget");
     const text = el("update-text");
@@ -247,9 +580,49 @@
     const installBtn = el("btn-install-update");
     if (!widget || !text || !checkBtn || !installBtn) return;
 
+    const phase = updateInfo.phase || "";
+    const progress = formatUpdateProgress();
+    const hideCheck =
+      updateInfo.hasUpdate ||
+      updateInfo.installing ||
+      phase === "downloading" ||
+      phase === "installing" ||
+      phase === "staged";
+    checkBtn.classList.toggle("hidden", hideCheck);
+
     if (updateInfo.checking) {
       widget.classList.remove("hidden");
       text.textContent = "Checking for updates…";
+      checkBtn.disabled = true;
+      installBtn.classList.add("hidden");
+      return;
+    }
+
+    if (phase === "downloading") {
+      widget.classList.remove("hidden");
+      text.textContent = progress
+        ? `Downloading ${progress}`
+        : "Downloading update…";
+      checkBtn.disabled = true;
+      installBtn.classList.remove("hidden");
+      installBtn.disabled = true;
+      installBtn.textContent = "Downloading…";
+      return;
+    }
+
+    if (phase === "installing") {
+      widget.classList.remove("hidden");
+      text.textContent = "Installing update…";
+      checkBtn.disabled = true;
+      installBtn.classList.remove("hidden");
+      installBtn.disabled = true;
+      installBtn.textContent = "Installing…";
+      return;
+    }
+
+    if (phase === "staged") {
+      widget.classList.remove("hidden");
+      text.textContent = "Update ready. Restart to apply.";
       checkBtn.disabled = true;
       installBtn.classList.add("hidden");
       return;
@@ -260,7 +633,7 @@
       text.textContent = updateInfo.latest
         ? `New version ${updateInfo.latest} available`
         : "New version available";
-      checkBtn.disabled = false;
+      checkBtn.disabled = true;
       installBtn.classList.remove("hidden");
       installBtn.disabled = updateInfo.installing;
       installBtn.textContent = updateInfo.installing
@@ -281,8 +654,15 @@
     let statusText = "Up to date";
     if (updateInfo.error) {
       statusText = updateInfo.error;
-    } else if (updateInfo.installing) {
+    } else if (updateInfo.phase === "downloading") {
+      const progress = formatUpdateProgress();
+      statusText = progress
+        ? `Downloading ${progress}`
+        : "Downloading update…";
+    } else if (updateInfo.phase === "installing") {
       statusText = "Installing update…";
+    } else if (updateInfo.phase === "staged") {
+      statusText = "Update ready. Restart to apply.";
     } else if (updateInfo.hasUpdate) {
       statusText = updateInfo.latest
         ? `New version ${updateInfo.latest} available`
@@ -318,13 +698,28 @@
 
     const installBtn = el("btn-about-install-update");
     if (installBtn) {
-      installBtn.classList.toggle("hidden", !updateInfo.hasUpdate);
+      installBtn.classList.toggle(
+        "hidden",
+        !updateInfo.hasUpdate || updateInfo.phase === "staged"
+      );
       installBtn.disabled = updateInfo.installing;
       installBtn.textContent = updateInfo.installing
         ? "Installing…"
         : updateInfo.assetName
         ? `Install ${updateInfo.assetName}`
         : "Install update";
+    }
+
+    const checkBtn = el("btn-about-check-updates");
+    if (checkBtn) {
+      const hideCheck =
+        updateInfo.hasUpdate ||
+        updateInfo.installing ||
+        updateInfo.phase === "downloading" ||
+        updateInfo.phase === "installing" ||
+        updateInfo.phase === "staged";
+      checkBtn.classList.toggle("hidden", hideCheck);
+      checkBtn.disabled = updateInfo.checking;
     }
   }
 
@@ -1834,6 +2229,7 @@
   const trustPrompted = new Set();
   const passwordPrompted = new Set();
   const passphrasePrompted = new Set();
+  const missingKeyPrompted = new Set();
   let lastConnectedKey = null;
 
   function nextStatePollDelay() {
@@ -1875,6 +2271,7 @@
           trustPrompted.delete(hostId);
           passwordPrompted.delete(hostId);
           passphrasePrompted.delete(hostId);
+          missingKeyPrompted.delete(hostId);
           updateStatus(s);
 
           const key = `${hostId}:${tabId}`;
@@ -1915,6 +2312,31 @@
                 // user canceled; keep disconnected
               });
           }
+        }
+
+        if (s.errCode === "key_not_found" && !missingKeyPrompted.has(hostId)) {
+          missingKeyPrompted.add(hostId);
+          const host = findHostById(hostId);
+          const checked = Array.isArray(s.keyChecked) ? s.keyChecked : [];
+          const lines = ["SSH key file not found."];
+          if (s.keyPath) {
+            lines.push(`Configured key: ${s.keyPath}`);
+          }
+          if (checked.length) {
+            lines.push("Checked:");
+            checked.forEach((p) => lines.push(`- ${p}`));
+          }
+          lines.push("Update the key path or switch auth to agent/password.");
+          confirmDialog(lines.join("\n"), {
+            okText: "Edit host",
+            cancelText: "Close",
+          })
+            .then((ok) => {
+              if (ok && host) {
+                openEditor("host", "edit", host);
+              }
+            })
+            .catch(() => {});
         }
 
         // Password auth needed
@@ -1966,6 +2388,10 @@
                 passphrasePrompted.delete(hostId);
               });
           }
+        }
+
+        if (s.errCode !== "key_not_found") {
+          missingKeyPrompted.delete(hostId);
         }
 
         if (lastConnectedKey === `${hostId}:${tabId}` && s.state !== "connected") {
@@ -2039,6 +2465,20 @@
     connectBtn.disabled = true;
     connectBtn.classList.remove("hidden");
     connectBtn.textContent = "Connect";
+
+    const samakiaAddBtn = el("host-menu-samakia-add");
+    const samakiaRunBtn = el("host-menu-samakia-run");
+    const samakiaTemplate = getSamakiaVerifyTemplate(host);
+    if (!samakiaTemplate) {
+      samakiaAddBtn.classList.add("hidden");
+      samakiaRunBtn.classList.add("hidden");
+    } else {
+      const roleLabel = host.role === "fabric" ? "Fabric" : "Platform";
+      samakiaAddBtn.textContent = `Add ${roleLabel} verify script`;
+      samakiaRunBtn.textContent = `Run ${roleLabel} verify script`;
+      samakiaAddBtn.classList.remove("hidden");
+      samakiaRunBtn.classList.remove("hidden");
+    }
 
     showHostMenuAt(e.clientX, e.clientY);
 
@@ -2255,6 +2695,8 @@
       const sftpOn = !!(h.sftp?.enabled || h.sftpEnabled);
       const sftpTag = sftpOn ? " · sftp" : "";
       const scopeTag = h.scope === "team" ? " · team" : " · private";
+      const roleTag = formatHostRole(h.role);
+      const roleSuffix = roleTag ? ` · ${roleTag}` : "";
 
       div.innerHTML = `
         <div class="node-name">${esc(h.name)}</div>
@@ -2264,6 +2706,7 @@
           · ${esc(h.auth?.method || "password")}
           ${scopeTag}
           ${sftpTag}
+          ${roleSuffix}
         </div>
       `;
 
@@ -2579,6 +3022,7 @@
     el("host-scope").value = hostScope;
     const hostTeamId = target?.teamId || (activeTeamId || "");
     fillTeamSelect(el("host-team"), hostTeamId, true);
+    el("host-role").value = target?.role || "generic";
 
     // Connection driver
     el("host-driver").value = driver;
@@ -2783,6 +3227,7 @@
           });
         }
       }
+      activeTeamId = netScope === "team" ? netTeam : "";
     }
 
     if (editorType === "host") {
@@ -2800,6 +3245,7 @@
 
       const hostScope = el("host-scope")?.value || "private";
       const hostTeamId = hostScope === "team" ? el("host-team").value : "";
+      const hostRole = el("host-role")?.value || "generic";
 
       const hostId = editorMode === "create" ? nextHostId() : editorTarget.id;
       if (
@@ -2822,6 +3268,7 @@
         host: el("host-host").value.trim(),
         user: el("host-user").value.trim(),
         port: Number(el("host-port").value),
+        role: hostRole === "generic" ? "" : hostRole,
         driver,
         scope: hostScope,
         teamId: hostTeamId,
@@ -3824,6 +4271,168 @@
       }
     };
 
+    el("btn-samakia-import").onclick = async () => {
+      const settings = await samakiaImportSettingsDialog(
+        "Samakia Inventory",
+        lastSamakiaImportMatchMode
+      );
+      if (!settings) return;
+      const networkName = String(settings.networkName || "").trim();
+      if (!networkName) {
+        notifyWarn("Network name is required for import.");
+        return;
+      }
+      const matchMode = String(settings.matchMode || "hostname").trim();
+      lastSamakiaImportMatchMode = matchMode || "hostname";
+
+      const ok = await confirmDialog(
+        [
+          "Import will update existing Samakia hosts and remove missing ones in the target network.",
+          `Match mode: ${formatSamakiaMatchMode(matchMode)}`,
+          "",
+          "Continue?",
+        ].join("\n"),
+        { okText: "Import", danger: true }
+      );
+      if (!ok) return;
+
+      try {
+        const r = await rpc({
+          type: "samakia_inventory_import_pick",
+          networkName,
+          matchMode,
+        });
+        if (r.canceled) return;
+
+        config = normalizeConfig(r.config);
+        renderTeamSelect();
+        renderNetworks();
+        renderHosts();
+        renderScripts();
+
+        openSamakiaImportSummary(r.summary, r.importPath || "");
+      } catch (e) {
+        notifyError(e.detail || e.error || "Samakia import failed");
+      }
+    };
+
+    const samakiaImportSettingsModal = el("samakia-import-settings-modal");
+    samakiaImportSettingsModal?.addEventListener("click", (e) => {
+      if (e.target === samakiaImportSettingsModal) {
+        closeSamakiaImportSettings(null);
+      }
+    });
+    el("samakia-import-settings-cancel").onclick = () =>
+      closeSamakiaImportSettings(null);
+    el("samakia-import-settings-ok").onclick = () => {
+      const networkInput = el("samakia-import-network-input");
+      const matchSelect = el("samakia-import-match-mode");
+      closeSamakiaImportSettings({
+        networkName: networkInput?.value || "",
+        matchMode: matchSelect?.value || "hostname",
+      });
+    };
+    el("samakia-import-network-input").addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      el("samakia-import-settings-ok").click();
+    });
+
+    const samakiaImportModal = el("samakia-import-modal");
+    samakiaImportModal?.addEventListener("click", (e) => {
+      if (e.target === samakiaImportModal) closeSamakiaImportSummary();
+    });
+
+    el("samakia-import-close").onclick = () => closeSamakiaImportSummary();
+    el("samakia-import-view").onclick = () => {
+      const netId = samakiaImportSummary?.networkId;
+      closeSamakiaImportSummary();
+      if (!netId) return;
+      activeNetworkId = Number(netId) || null;
+      activeHostId = null;
+      activeTermTabId = null;
+      activeState = "disconnected";
+      activeHostHasSFTP = false;
+      activateTerminalForHostTab(null, null);
+      setActiveTab("terminal");
+      el("title").textContent = "Select a host";
+      renderNetworks();
+      renderHosts();
+      renderScripts();
+      updateStatus(null);
+    };
+
+    el("samakia-import-report-json").onclick = async () => {
+      if (!samakiaImportSummary) return;
+      try {
+        const r = await rpc({
+          type: "samakia_import_report",
+          summary: samakiaImportSummary,
+          path: samakiaImportPath,
+          format: "json",
+        });
+        if (r?.path) {
+          notifySuccess(`Report saved to:\n${r.path}`, { ttl: 7000 });
+        }
+      } catch (e) {
+        notifyError(e.detail || e.error || "Report export failed");
+      }
+    };
+
+    el("samakia-import-report-csv").onclick = async () => {
+      if (!samakiaImportSummary) return;
+      try {
+        const r = await rpc({
+          type: "samakia_import_report",
+          summary: samakiaImportSummary,
+          path: samakiaImportPath,
+          format: "csv",
+        });
+        if (r?.path) {
+          notifySuccess(`Report saved to:\n${r.path}`, { ttl: 7000 });
+        }
+      } catch (e) {
+        notifyError(e.detail || e.error || "Report export failed");
+      }
+    };
+
+    el("samakia-import-report-md").onclick = async () => {
+      if (!samakiaImportSummary) return;
+      try {
+        const r = await rpc({
+          type: "samakia_import_report",
+          summary: samakiaImportSummary,
+          path: samakiaImportPath,
+          format: "md",
+        });
+        if (r?.path) {
+          notifySuccess(`Report saved to:\n${r.path}`, { ttl: 7000 });
+        }
+      } catch (e) {
+        notifyError(e.detail || e.error || "Report export failed");
+      }
+    };
+
+    el("samakia-import-copy").onclick = () => {
+      if (!samakiaImportSummary) return;
+      const text = buildSamakiaReportText(samakiaImportSummary, samakiaImportPath);
+      writeClipboardText(text)
+        .then(() => notifySuccess("Report copied to clipboard."))
+        .catch(() => notifyError("Copy failed"));
+    };
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (isVisible("samakia-import-settings-modal")) {
+        e.preventDefault();
+        closeSamakiaImportSettings(null);
+        return;
+      }
+      if (!isVisible("samakia-import-modal")) return;
+      e.preventDefault();
+      closeSamakiaImportSummary();
+    });
+
     function showAbout() {
       el("about-modal")?.classList.remove("hidden");
       requestAboutInfo(true);
@@ -3919,6 +4528,21 @@
       const h = hostMenuTarget;
       hideHostMenu();
       if (h) openEditor("host", "edit", h);
+    };
+    el("host-menu-samakia-add").onclick = () => {
+      const h = hostMenuTarget;
+      hideHostMenu();
+      if (!h) return;
+      const script = ensureSamakiaVerifyScript(h);
+      if (script) {
+        renderScripts();
+        notifySuccess(`Added ${script.name}.`);
+      }
+    };
+    el("host-menu-samakia-run").onclick = () => {
+      const h = hostMenuTarget;
+      hideHostMenu();
+      if (h) runSamakiaVerify(h);
     };
     el("host-menu-duplicate").onclick = () => {
       const h = hostMenuTarget;

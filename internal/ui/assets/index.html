@@ -41,6 +41,9 @@
         <button id="btn-import" class="btn small secondary" title="Import configuration (.json)">
           Import
         </button>
+        <button id="btn-samakia-import" class="btn small secondary" title="Import Samakia inventory (.json)">
+          Samakia Import
+        </button>
         <button id="btn-teams" class="btn small secondary" title="Teams">
           Teams
         </button>
@@ -121,6 +124,12 @@
   <div id="host-menu" class="context-menu hidden" role="menu" aria-label="Host menu">
     <button id="host-menu-connect" class="context-item" role="menuitem">Connect</button>
     <button id="host-menu-edit" class="context-item" role="menuitem">Edit</button>
+    <button id="host-menu-samakia-add" class="context-item" role="menuitem">
+      Add Samakia verify script
+    </button>
+    <button id="host-menu-samakia-run" class="context-item" role="menuitem">
+      Run Samakia verify script
+    </button>
     <button id="host-menu-duplicate" class="context-item" role="menuitem">Duplicate</button>
     <button id="host-menu-delete" class="context-item danger" role="menuitem">Delete</button>
   </div>
@@ -438,6 +447,16 @@
           </div>
 
           <div class="form-group hidden" data-scope="host">
+            <label>Role</label>
+            <select id="host-role">
+              <option value="generic">Generic</option>
+              <option value="fabric">Samakia Fabric</option>
+              <option value="platform">Samakia Platform</option>
+            </select>
+            <div class="help">Tag Samakia nodes for environment-aware verification.</div>
+          </div>
+
+          <div class="form-group hidden" data-scope="host">
             <label>Host / IP *</label>
             <input id="host-host" type="text" placeholder="192.168.1.10" required />
           </div>
@@ -572,6 +591,99 @@
       <div class="modal-actions">
         <button id="prompt-cancel" class="btn secondary">Cancel</button>
         <button id="prompt-ok" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="samakia-import-settings-modal" class="modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="samakia-import-settings-title">
+    <div class="modal-card">
+      <div class="modal-title" id="samakia-import-settings-title">Samakia import</div>
+      <div class="modal-body">
+        <div class="modal-row">
+          <div class="label">Network</div>
+          <input id="samakia-import-network-input" class="modal-input" type="text" />
+        </div>
+        <div class="modal-row">
+          <div class="label">Match mode</div>
+          <select id="samakia-import-match-mode" class="modal-select">
+            <option value="hostname">Hostname (name-first)</option>
+            <option value="host">Host address</option>
+            <option value="uid">UID</option>
+          </select>
+        </div>
+        <div class="modal-warn">UID matching requires uid (or id/vmid) on every entry.</div>
+      </div>
+      <div class="modal-actions">
+        <button id="samakia-import-settings-cancel" class="btn secondary">Cancel</button>
+        <button id="samakia-import-settings-ok" class="btn primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="samakia-import-modal" class="modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="samakia-import-title">
+    <div class="modal-card">
+      <div class="modal-title" id="samakia-import-title">Samakia import summary</div>
+      <div class="modal-body">
+        <div class="modal-row">
+          <div class="label">Network</div>
+          <div class="value" id="samakia-import-network"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Source</div>
+          <div class="value" id="samakia-import-source"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Match mode</div>
+          <div class="value" id="samakia-import-match-mode-value"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Path</div>
+          <div class="value mono" id="samakia-import-path"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Added</div>
+          <div class="value" id="samakia-import-added"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Updated</div>
+          <div class="value" id="samakia-import-updated"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Skipped</div>
+          <div class="value" id="samakia-import-skipped"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Removed</div>
+          <div class="value" id="samakia-import-removed"></div>
+        </div>
+        <div class="modal-row">
+          <div class="label">Roles</div>
+          <div class="value" id="samakia-import-roles"></div>
+        </div>
+        <div class="import-lists">
+          <div class="import-section">
+            <div class="import-section-title">Added</div>
+            <div class="import-list" id="samakia-import-added-list"></div>
+          </div>
+          <div class="import-section">
+            <div class="import-section-title">Updated</div>
+            <div class="import-list" id="samakia-import-updated-list"></div>
+          </div>
+          <div class="import-section">
+            <div class="import-section-title">Removed</div>
+            <div class="import-list" id="samakia-import-removed-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="samakia-import-close" class="btn secondary">Close</button>
+        <button id="samakia-import-copy" class="btn secondary">Copy report</button>
+        <button id="samakia-import-report-json" class="btn secondary">Export JSON</button>
+        <button id="samakia-import-report-csv" class="btn secondary">Export CSV</button>
+        <button id="samakia-import-report-md" class="btn secondary">Export Markdown</button>
+        <button id="samakia-import-view" class="btn primary">View network</button>
       </div>
     </div>
   </div>

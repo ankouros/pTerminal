@@ -12,11 +12,18 @@ import (
 	"github.com/ankouros/pterminal/internal/p2p"
 	"github.com/ankouros/pterminal/internal/session"
 	"github.com/ankouros/pterminal/internal/ui"
+	"github.com/ankouros/pterminal/internal/update"
 )
 
 func Run() error {
 	if runtime.GOOS != "linux" {
 		return errors.New("pterminal scaffold currently targets linux")
+	}
+
+	if path, err := update.ApplyStagedBinary(); err != nil {
+		log.Printf("update apply failed: %v", err)
+	} else if path != "" {
+		log.Printf("update applied: %s", path)
 	}
 
 	// Load canonical application config (pterminal.json)

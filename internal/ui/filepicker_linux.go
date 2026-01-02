@@ -104,3 +104,19 @@ func (w *Window) pickConfigImportPath() string {
 	defer C.g_free(C.gpointer(p))
 	return C.GoString(p)
 }
+
+func (w *Window) pickSamakiaInventoryPath() string {
+	if w == nil || w.wv == nil {
+		return ""
+	}
+
+	title := C.CString("Import Samakia inventory (.json)")
+	defer C.free(unsafe.Pointer(title))
+
+	p := C.pterminal_pick_json(w.wv.Window(), title)
+	if p == nil {
+		return ""
+	}
+	defer C.g_free(C.gpointer(p))
+	return C.GoString(p)
+}
